@@ -11,6 +11,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { Workbench } from './dashboard/Workbench'
 import { SkillsPanel } from './dashboard/SkillsPanel'
 import { ensureModalAnimStyles, useModalClose } from '../modal-animation'
+import { ErrorBoundary } from '../error-boundary'
 import { NavButton, NavPortal, ensureNavMount, ensureNavStyles, navAnchorFrom, useRail } from '../sidebar-nav'
 import { ensureShellStyles, type PopoverAnchor } from '../popover-shell'
 
@@ -47,7 +48,13 @@ function UsageWorkbenchEntry(): JSX.Element {
           setOpen(true)
         }}
       />
-      {open && <Workbench closing={closing} onClose={requestClose} anchor={anchor} />}
+      {/* 面板单独包边界：面板内部崩了只收面板，导航行按钮留着（否则 React 18
+          会卸载整个 root，侧边栏入口凭空消失且控制台无痕）。 */}
+      {open && (
+        <ErrorBoundary label="用量工作台" fallback={null} onError={requestClose}>
+          <Workbench closing={closing} onClose={requestClose} anchor={anchor} />
+        </ErrorBoundary>
+      )}
     </>
   )
 }
@@ -79,7 +86,11 @@ function SkillsEntry(): JSX.Element {
           setOpen(true)
         }}
       />
-      {open && <SkillsPanel closing={closing} onClose={requestClose} anchor={anchor} />}
+      {open && (
+        <ErrorBoundary label="技能面板" fallback={null} onError={requestClose}>
+          <SkillsPanel closing={closing} onClose={requestClose} anchor={anchor} />
+        </ErrorBoundary>
+      )}
     </>
   )
 }

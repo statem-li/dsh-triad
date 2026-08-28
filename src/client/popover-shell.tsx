@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { MODAL_ANIM_MS, modalSideAnimClass } from './modal-animation.js'
 
 const STYLE_ID = 'dsh-popover-shell-styles'
@@ -177,7 +178,12 @@ export function PopoverShell({
     return () => { document.removeEventListener('keydown', onKey) }
   }, [closing, onClose])
 
-  return (
+  // portal 到 body：卡片不能留在入口所在的 DOM 子树里。
+  // 入口是 portal 进侧边栏导航槽的，而槽位宿主是我们手工插进 DSH 自有
+  // React 树的裸节点——弹层一旦留在里面，侧边栏任何一次重渲染都可能连带
+  // 回收它，且 position:fixed 会被侧边栏的 transform 祖先变成局部定位。
+  // 挪到 body 后：不受侧边栏渲染影响、fixed 锚定视口、层级与 DOM 顺序可控。
+  return createPortal(
     <>
       <div className="psh-mask" data-anim={anim} aria-hidden="true" onClick={onClose} />
       <div
@@ -194,7 +200,8 @@ export function PopoverShell({
       >
         {children}
       </div>
-    </>
+    </>,
+    document.body,
   )
 }
 

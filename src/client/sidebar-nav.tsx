@@ -52,6 +52,7 @@ function makeSlot(name: string): HTMLDivElement {
 
 let started = false
 let pollTimer = 0
+let hostObserver: MutationObserver | undefined
 
 /** 确保 host 已创建并插到 `sidebar.workspaces` slot 之前（幂等）。 */
 function ensureHostPlaced(): boolean {
@@ -86,6 +87,30 @@ function ensureHostPlaced(): boolean {
 }
 
 /**
+ * 盯住宿主的直接父节点，宿主一被摘掉立刻补位。
+ *
+ * host 是我们手工 `insertBefore` 进 DSH 自有 React 树的裸节点——React 不认识
+ * 它，侧边栏任何一次 children 重排都可能把它回收掉。只靠 1.5s 轮询会留下
+ * 最长 1.5s 的空窗（视觉上就是入口闪一下再回来）。这里只观察父节点的
+ * childList（不开 subtree）：侧边栏自身的 DOM 变动频率很低，而弹层面板已经
+ * portal 到 body，不会在这里产生噪音。
+ *
+ * 收敛性：补位后 host 已就位，`ensureHostPlaced` 不再改动 DOM，不会自激。
+ * 父节点整体被替换时观察会失联，由轮询兜底重挂。
+ */
+function watchHostParent(): void {
+  const parent = document.getElementById(HOST_ID)?.parentElement
+  if (parent === undefined) return
+  hostObserver?.disconnect()
+  hostObserver = new MutationObserver(() => {
+    const before = document.getElementById(HOST_ID)?.parentElement
+    ensureHostPlaced()
+    if (document.getElementById(HOST_ID)?.parentElement !== before) watchHostParent()
+  })
+  hostObserver.observe(parent, { childList: true })
+}
+
+/**
  * 挂载导航区 host（幂等单例）。首次调用者持有清理权（停轮询、移除 host），
  * 后续调用返回 no-op。
  */
@@ -94,11 +119,17 @@ export function ensureNavMount(): () => void {
   if (started) return () => {}
   started = true
   ensureHostPlaced()
-  // 低频轮询兜底：侧边栏重挂时自动补位（HMR、React 重建等）。
-  pollTimer = window.setInterval(() => { ensureHostPlaced() }, 1500)
+  watchHostParent()
+  // 低频轮询兜底：侧边栏容器整体被替换（观察失联）时重挂（HMR、React 重建等）。
+  pollTimer = window.setInterval(() => {
+    ensureHostPlaced()
+    if (hostObserver === undefined) watchHostParent()
+  }, 1500)
   return () => {
     window.clearInterval(pollTimer)
     pollTimer = 0
+    hostObserver?.disconnect()
+    hostObserver = undefined
     started = false
     document.getElementById(HOST_ID)?.remove()
   }

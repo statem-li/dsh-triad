@@ -220,6 +220,8 @@ const css = {
   installForm: 'skm-install-form',
   installRow: 'skm-install-row',
   inlineForm: 'skm-inline-form',
+  // 块级变体：改名输入行独占一整行（整行内容保留，表单追加在其下方）。
+  inlineFormBlock: 'skm-inline-form-block',
   inlineInput: 'skm-inline-input',
   bundleSelect: 'skm-bundle-select',
   installMeta: 'skm-install-meta',
@@ -292,6 +294,9 @@ const SHEET = `
 .skm-install-form{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:12px;background:var(--dsw-alias-bg-layer-1,#1c1f26)}
 .skm-install-row{display:flex;flex-direction:column;gap:6px}
 .skm-inline-form{flex:none;display:flex;align-items:center;gap:6px}
+/* 块级变体：width:100% 让它在 .skm-bundle（flex-wrap）里自动换行独占一行，
+   输入框因此能吃满整行宽度，不必被两个按钮挤到只剩默认 20 字符。 */
+.skm-inline-form-block{width:100%;box-sizing:border-box;padding:0 8px 8px}
 .skm-inline-input{flex:1;min-width:0;height:32px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:8px;padding:0 10px;font-size:13px;color:var(--dsw-alias-label-primary,#eee);background:var(--dsw-alias-bg-base,#0e1116)}
 .skm-inline-input::placeholder{color:var(--dsw-alias-label-tertiary,#888)}
 .skm-bundle-select{display:flex;align-items:center}
@@ -1219,8 +1224,49 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                   const bundleToggling = toggling.has(`bundle:${bundle.id}`)
                   return (
                     <li key={bundle.id} className={css.bundle} data-open={open2 ? 'true' : undefined}>
-                      {renamingThis ? (
-                        <form className={css.inlineForm} onSubmit={(event) => { void submitRename(event) }}>
+                      {/* 整行常驻：开关 / 名称 / 数量 / 箭头 / 改名删除钮在改名期间
+                          全部保留。原来这里是「表单 vs 整行」二选一，一点改名整行内容
+                          就被替换掉，看起来像技能包凭空消失。 */}
+                      <>
+                        <span className={css.bundleToggle}>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={bundleEnabled}
+                            aria-label={bundleEnabled ? t('disableBundle') : t('enableBundle')}
+                            title={bundleEnabled ? t('disableBundle') : t('enableBundle')}
+                            className={`${css.toggle} ${bundleEnabled ? css.toggleOn : css.toggleOff}`}
+                            disabled={bundleToggling || bundle.skillCount === 0}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleBundle(bundle, !bundleEnabled)
+                            }}
+                          >
+                            <span className={css.toggleKnob} aria-hidden="true" />
+                          </button>
+                        </span>
+                        <button type="button" className={css.bundleRow} aria-expanded={open2} onClick={() => { toggleExpanded(bundle.id) }}>
+                          <span className={css.bundleName}>{bundle.name}</span>
+                          <span className={css.bundleCount}>{t('skillsCount', { n: bundle.skillCount })}</span>
+                          <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                        </button>
+                        <div className={css.bundleActions}>
+                          <Tooltip label={t('rename')} side="bottom" delayMs={500}>
+                            <button type="button" className={css.iconAction} aria-label={t('rename')}
+                              onClick={() => { setRenameTarget({ bundleId: bundle.id, name: bundle.name }) }}>
+                              <IconEditOutline16 size={14} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label={t('delete')} side="bottom" delayMs={500}>
+                            <button type="button" className={css.iconAction} aria-label={t('delete')}
+                              onClick={() => { setConfirm({ kind: 'bundle', bundle }) }}>
+                              <IconTrashOutline16 size={14} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                      </>
+                      {renamingThis && renameTarget !== null && (
+                        <form className={`${css.inlineForm} ${css.inlineFormBlock}`} onSubmit={(event) => { void submitRename(event) }}>
                           <input className={css.inlineInput} value={renameTarget.name} placeholder={t('renameBundlePlaceholder')}
                             aria-label={t('renameBundlePlaceholder')} autoFocus disabled={renaming}
                             onChange={(event) => {
@@ -1229,45 +1275,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                           <Button variant="primary" type="submit" disabled={renaming || renameTarget.name.trim() === ''}>{t('rename')}</Button>
                           <Button variant="outline" type="button" disabled={renaming} onClick={() => { setRenameTarget(null) }}>{t('cancel')}</Button>
                         </form>
-                      ) : (
-                        <>
-                          <span className={css.bundleToggle}>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={bundleEnabled}
-                              aria-label={bundleEnabled ? t('disableBundle') : t('enableBundle')}
-                              title={bundleEnabled ? t('disableBundle') : t('enableBundle')}
-                              className={`${css.toggle} ${bundleEnabled ? css.toggleOn : css.toggleOff}`}
-                              disabled={bundleToggling || bundle.skillCount === 0}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleBundle(bundle, !bundleEnabled)
-                              }}
-                            >
-                              <span className={css.toggleKnob} aria-hidden="true" />
-                            </button>
-                          </span>
-                          <button type="button" className={css.bundleRow} aria-expanded={open2} onClick={() => { toggleExpanded(bundle.id) }}>
-                            <span className={css.bundleName}>{bundle.name}</span>
-                            <span className={css.bundleCount}>{t('skillsCount', { n: bundle.skillCount })}</span>
-                            <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                          </button>
-                          <div className={css.bundleActions}>
-                            <Tooltip label={t('rename')} side="bottom" delayMs={500}>
-                              <button type="button" className={css.iconAction} aria-label={t('rename')}
-                                onClick={() => { setRenameTarget({ bundleId: bundle.id, name: bundle.name }) }}>
-                                <IconEditOutline16 size={14} />
-                              </button>
-                            </Tooltip>
-                            <Tooltip label={t('delete')} side="bottom" delayMs={500}>
-                              <button type="button" className={css.iconAction} aria-label={t('delete')}
-                                onClick={() => { setConfirm({ kind: 'bundle', bundle }) }}>
-                                <IconTrashOutline16 size={14} />
-                              </button>
-                            </Tooltip>
-                          </div>
-                        </>
                       )}
                       {open2 && (
                         <ul className={css.skillList}>

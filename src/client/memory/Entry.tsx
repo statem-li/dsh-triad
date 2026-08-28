@@ -14,6 +14,7 @@ import { ensureNavStyles, NavButton, NavPortal, navAnchorFrom, useRail } from '.
 import { ensureModalAnimStyles, useModalClose } from '../modal-animation.js'
 import { ensureShellStyles, type PopoverAnchor } from '../popover-shell.js'
 import { ensureStyles } from './styles.js'
+import { ErrorBoundary } from '../error-boundary.js'
 
 /**
  * 渲染记忆导航行与面板（自足组件：内部自建 API 与翻译，不依赖 slot 注入面）。
@@ -54,16 +55,19 @@ export function MemoryNavApp(): JSX.Element | null {
         }}
       />
       {/* api 整体展开：面板 props 是 MemoryApi 的超集，逐字段列举会在
-          API 面新增方法（deleteBatch / resetConfig 等）时漏传而编译失败。 */}
-      <MemoryPanel
-        {...api}
-        open={open}
-        closing={closing}
-        onClose={requestClose}
-        initialTab={initialTab}
-        anchor={anchor}
-        t={t}
-      />
+          API 面新增方法（deleteBatch / resetConfig 等）时漏传而编译失败。
+          外面再包一层错误边界：面板崩了只收面板，导航按钮留着。 */}
+      <ErrorBoundary label="记忆面板" fallback={null} onError={requestClose}>
+        <MemoryPanel
+          {...api}
+          open={open}
+          closing={closing}
+          onClose={requestClose}
+          initialTab={initialTab}
+          anchor={anchor}
+          t={t}
+        />
+      </ErrorBoundary>
     </NavPortal>
   )
 }

@@ -63,20 +63,31 @@ function stubNode(tag = 'div') {
   return node
 }
 
-/** Everything the bundle may ask the platform for. */
-const MODULES = {
-  'react': Object.assign(
-    // Any unknown export resolves to a stub component (covers icon sets etc).
-    new Proxy({}, {
-      get: (_t, prop) => (typeof prop === 'string' ? stubComponent(String(prop)) : undefined),
-      has: () => true,
-    }),
-    {
+/** Explicit React overrides. Kept separate so the Proxy below can consult it
+ *  first — a bare `get` trap would otherwise shadow every one of these. */
+const REACT_OVERRIDES = {
       createElement: (type, props, ...children) => ({ type, props, children }),
       cloneElement: (el) => el,
       isValidElement: () => false,
       Children: { map: () => [], forEach: () => {}, count: () => 0, toArray: () => [] },
       Fragment: Symbol('Fragment'),
+      // Real class, not a stub function: `class X extends Component` is a
+      // module-top-level evaluation (error boundaries), and extending the
+      // generic stub function throws "is not a constructor".
+      Component: class Component {
+        constructor(props) {
+          this.props = props
+          this.state = null
+        }
+
+        setState() {}
+
+        forceUpdate() {}
+
+        render() {
+          return null
+        }
+      },
       StrictMode: stubComponent('StrictMode'),
       Suspense: stubComponent('Suspense'),
       memo: (comp) => comp,
@@ -100,8 +111,20 @@ const MODULES = {
       useSyncExternalStore: (_sub, get) => get(),
       useTransition: () => [false, (fn) => fn?.()],
       useDeferredValue: (v) => v,
+}
+
+/** Everything the bundle may ask the platform for. */
+const MODULES = {
+  'react': new Proxy(REACT_OVERRIDES, {
+    // Known export → the real override; anything else (icon sets, future
+    // hooks) falls back to a stub component.
+    get: (target, prop) => {
+      if (typeof prop !== 'string') return undefined
+      if (Object.hasOwn(target, prop)) return target[prop]
+      return stubComponent(prop)
     },
-  ),
+    has: () => true,
+  }),
   'react/jsx-runtime': {
     jsx: (type, props) => ({ type, props }),
     jsxs: (type, props) => ({ type, props }),
