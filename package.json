@@ -28,6 +28,7 @@
     "lib",
     "vendor",
     "src",
+    "scripts",
     "build.mjs",
     "cordis.patch.yml",
     "README.md"
