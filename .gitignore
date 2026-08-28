@@ -1,0 +1,13 @@
+node_modules/
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+
+# Sourcemaps stay out (large, and they churn on every build). The bundles in
+# lib/ are committed on purpose: this package is installed as a git dependency,
+# and pnpm >= 10 blocks a git dependency's `prepare` script until allowlisted
+# under `allowBuilds`. Shipping lib/ means `dsh plugin add github:...` works in
+# one shot — the prepare script merely rebuilds it when pnpm does allow it.
+*.map

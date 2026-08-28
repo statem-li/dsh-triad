@@ -1,0 +1,18 @@
+# dsh-triad bundle patch — applied automatically when this package is added to
+# a profile with `dsh plugin add`. Do not edit by hand; override from the
+# profile's own cordis.patch.yml (a later layer) instead.
+
+# The kernel's client-side skill plugin occupies the same two seats as this
+# plugin's skill module, and registering twice throws:
+#   1. inputTriggers' ('/', 'skill') seat  → "already registered"
+#   2. tool.call.toolview's key 'skill'
+# Host-side skill capability is unaffected: @deepseek-ai/dsh-tool-skill ships in
+# the base bundle and ctx.remote.skills is a host service, so the skill
+# invocation path keeps working — only the '/' menu and the tool row move here.
+- id: ui-skill
+  name: '@deepseek-ai/dsh-client-ui-skill'
+  disabled: true
+
+- insert:
+    - id: dsh-triad
+      name: dsh-triad

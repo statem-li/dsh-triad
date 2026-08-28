@@ -1,0 +1,281 @@
+/**
+ * sidebar-nav — 侧边栏导航区共享挂载器。
+ *
+ * 在 sidebar 的浏览区容器（`[data-slot="sidebar.workspaces"]`）正上方插
+ * 一个 host，host 内按固定顺序（usage / skills / memory / team）放四个
+ * `data-nav-slot` 槽位容器；各入口（usage / skills / memory 三个 React 组
+ * 件，以及将来可能新增的 team）经 `useNavSlot` 轮询拿到自己的槽位后
+ * `createPortal` 进去——顺序确定、互不覆盖、跟 React 首次提交不竞态。
+ *
+ * rail 折叠态由 `useRail` 观察 `data-shell-overlay` 框架容器的
+ * `data-sidebar-collapsed` 属性切换，rail 下导航行收缩为图标钮。
+ */
+
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import type { PopoverAnchor } from './popover-shell.js'
+
+/** nav host id（本模块创建）。 */
+const HOST_ID = 'dsh-triad-nav-host'
+/** slots 渲染器的稳定锚点（SidebarRoot 暴露的 `sidebar.workspaces` slot）。 */
+const ANCHOR_SELECTOR = '[data-slot="sidebar.workspaces"]'
+/** 侧边栏折叠观察：框架容器选择在所有 sidebar 状态（wide/rail）下都唯一。 */
+const FRAME_SELECTOR = 'div:has(> [data-shell-overlay])'
+
+/**
+ * nav host 的行布局：每个数组元素是一行，行内数组是并排的槽位。
+ *
+ *   [usage][skills][memory] 合并一行 → team 独立一行
+ *
+ * 历史：dsh-webui 早期版本依赖一个被 DSH 0.1.2-alpha.1 砍掉的「自动化菜单」
+ * host（grep 全空），把 skills/memory 塞在自动化 host 内部做合并行——
+ * 卸载 webui 后那条路径已无可建 host。现在四个槽位全部由 dsh-triad 自己
+ * 创建，合并行由本模块自建的 `.dsh-nav-row` 容器承载。
+ */
+const SLOT_LAYOUT = [
+  ['usage', 'skills', 'memory'],
+  ['team'],
+] as const
+
+/** 槽位名（布局表展平）。 */
+const SLOT_NAMES = SLOT_LAYOUT.flat() as readonly string[]
+
+/** 槽位名。 */
+export type NavSlotName = (typeof SLOT_LAYOUT)[number][number]
+
+/** 建一个槽位容器（portal 目标）。 */
+function makeSlot(name: string): HTMLDivElement {
+  const slot = document.createElement('div')
+  slot.dataset.navSlot = name
+  return slot
+}
+
+let started = false
+let pollTimer = 0
+
+/** 确保 host 已创建并插到 `sidebar.workspaces` slot 之前（幂等）。 */
+function ensureHostPlaced(): boolean {
+  const anchor = document.querySelector(ANCHOR_SELECTOR)
+  if (anchor === null) return false
+  const parent = anchor.parentElement
+  if (parent === null) return false
+  let host = document.getElementById(HOST_ID) as HTMLDivElement | null
+  if (host === null) {
+    host = document.createElement('div')
+    host.id = HOST_ID
+    host.dataset.plugin = 'dsh-triad'
+    for (const row of SLOT_LAYOUT) {
+      if (row.length === 1) {
+        host.appendChild(makeSlot(row[0]))
+        continue
+      }
+      // 合并行：槽位 display:contents，按钮直接参与行内横向布局。
+      const rowEl = document.createElement('div')
+      rowEl.className = 'dsh-nav-row'
+      for (const name of row) rowEl.appendChild(makeSlot(name))
+      host.appendChild(rowEl)
+    }
+  }
+  // 就位判定：host 与锚点同父、且在锚点之前。
+  const inPlace = host.parentElement === parent
+    && (anchor.compareDocumentPosition(host) & Node.DOCUMENT_POSITION_PRECEDING) !== 0
+  if (!inPlace) {
+    parent.insertBefore(host, anchor)
+  }
+  return true
+}
+
+/**
+ * 挂载导航区 host（幂等单例）。首次调用者持有清理权（停轮询、移除 host），
+ * 后续调用返回 no-op。
+ */
+export function ensureNavMount(): () => void {
+  if (typeof document === 'undefined') return () => {}
+  if (started) return () => {}
+  started = true
+  ensureHostPlaced()
+  // 低频轮询兜底：侧边栏重挂时自动补位（HMR、React 重建等）。
+  pollTimer = window.setInterval(() => { ensureHostPlaced() }, 1500)
+  return () => {
+    window.clearInterval(pollTimer)
+    pollTimer = 0
+    started = false
+    document.getElementById(HOST_ID)?.remove()
+  }
+}
+
+/** 轮询获取指定槽位容器（未就位时返回 null，组件据此暂不渲染）。
+ *
+ * 槽位可能直接挂在 nav host 下（独立行的 usage / team）或嵌在 `.dsh-nav-row`
+ * 合并行容器里（skills / memory），因此全局按 data-nav-slot 查找——
+ * 槽位名由本模块统一创建，唯一。
+ *
+ * **永不停止**：未就位时 100ms 阶梯快查（10 次后退 400ms）；找到后退化为
+ * 800ms 慢速校验——同一节点 setSlot 被 React 直接跳过，零渲染开销。这样
+ * 槽位一旦被移除/替换（HMR、React 重建 host、竞态清空等），portal 会自动
+ * 迁到新槽；否则会攥着游离的旧槽引用把入口「弄丢」且不再恢复。
+ */
+export function useNavSlot(name: NavSlotName): HTMLElement | null {
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    let timer = 0
+    let tries = 0
+    const poll = (): void => {
+      const found = document.querySelector<HTMLElement>(`[data-nav-slot='${name}']`)
+      if (found !== null) tries = 0
+      else tries += 1
+      setSlot(found)
+      timer = window.setTimeout(poll, found !== null ? 800 : tries <= 10 ? 100 : 400)
+    }
+    poll()
+    return () => { window.clearTimeout(timer) }
+  }, [name])
+  return slot
+}
+
+/** 侧边栏折叠态（rail = 只显示图标）。
+ *
+ * 观察挂在 body 子树上（attributeFilter 限定 data-sidebar-collapsed）：
+ * 框架容器可能在折叠时被 React 重挂，盯单节点会失联；body 级观察 + 低频
+ * 兜底重读对「框架迟到 / 节点替换 / 属性时序」都免疫。值不变时 React 自动
+ * 跳过渲染，轮询无额外开销。
+ */
+export function useRail(): boolean {
+  const [rail, setRail] = useState(() =>
+    document.querySelector(FRAME_SELECTOR)?.hasAttribute('data-sidebar-collapsed') ?? false)
+  useEffect(() => {
+    const read = (): void => {
+      setRail(document.querySelector(FRAME_SELECTOR)?.hasAttribute('data-sidebar-collapsed') ?? false)
+    }
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-sidebar-collapsed'], subtree: true })
+    const timer = window.setInterval(read, 1500)
+    return () => {
+      observer.disconnect()
+      window.clearInterval(timer)
+    }
+  }, [])
+  return rail
+}
+
+const STYLE_ID = 'dsh-triad-nav-styles'
+
+const SHEET = `
+/* 导航行：与自动化菜单行同款几何（透明底 + hover 高亮 + 文字省略） */
+.dsh-nav-btn{position:relative;display:flex;align-items:center;gap:8px;width:calc(100% - 4px);height:34px;padding:0 10px;margin:0 2px 4px;box-sizing:border-box;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary,#eee);font-size:14px;line-height:20px;font-family:inherit;cursor:pointer;text-align:left;user-select:none;overflow:hidden;transition:background 120ms ease}
+.dsh-nav-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
+.dsh-nav-btn[data-open='true']{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
+.dsh-nav-btn>svg{flex:none;color:var(--dsw-alias-label-secondary,#bbb)}
+.dsh-nav-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 行尾附加内容（今日用量等）：等宽数字右贴 */
+.dsh-nav-trailing{flex:none;margin-left:auto;font-size:13px;line-height:18px;color:var(--dsw-alias-label-secondary,#bbb);font-family:ui-monospace,SFMono-Regular,monospace}
+/* 折叠 rail 态：只留图标 */
+.dsh-nav-btn[data-rail='true']{width:36px;height:36px;padding:0;margin:0 0 8px;justify-content:center;border-radius:8px}
+/* 未读 badge（记忆入口）：右上角小圆标 */
+.dsh-nav-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;box-sizing:border-box;padding:0 4px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--dsw-alias-state-warn-primary,#e8a33d);color:#0e1116;font-size:10px;font-weight:700;line-height:16px}
+/* nav host：各行纵向堆叠；独立行的槽位 display:contents，按钮直接撑满整行。 */
+#dsh-triad-nav-host{display:flex;flex-direction:column;align-items:stretch;width:100%}
+#dsh-triad-nav-host>[data-nav-slot]{display:contents}
+/* 合并行：[技能][记忆] 并排；槽位 display:contents 让按钮直接参与行布局，
+   按钮等分整行（flex:1 1 0），与独立行的视觉节奏一致——
+   否则收缩为内容宽时行尾会留出大片空白。 */
+.dsh-nav-row{display:flex;flex-wrap:wrap;align-items:stretch;gap:2px;padding:0 2px}
+.dsh-nav-row>[data-nav-slot]{display:contents;min-width:0}
+.dsh-nav-row .dsh-nav-btn{width:auto;flex:1 1 0;min-width:0;margin:0 0 4px;justify-content:center;text-align:center;padding:0 8px}
+.dsh-nav-row .dsh-nav-btn .dsh-nav-label{min-width:0}
+/* 三等分后每格约 1/3 侧栏宽，放不下「文字 + 行尾数字」，且行尾的
+   margin-left:auto 会顶掉居中。合并行统一不显示行尾附加内容
+   （今日总量等）——完整数据点开工作台卡片即可。 */
+.dsh-nav-row .dsh-nav-trailing{display:none}
+/* 折叠 rail 态：合并行恢复纵向图标列（与原生 rail 图标钮节奏一致） */
+#dsh-triad-nav-host:has(.dsh-nav-btn[data-rail]) .dsh-nav-row{flex-direction:column;align-items:flex-start;gap:0}
+#dsh-triad-nav-host:has(.dsh-nav-btn[data-rail]) .dsh-nav-row .dsh-nav-btn{width:36px;flex:none;margin:0 0 8px}
+`
+
+/** 注入导航行样式（幂等）。 */
+export function ensureNavStyles(): void {
+  if (typeof document === 'undefined') return
+  if (document.getElementById(STYLE_ID) !== null) return
+  const tag = document.createElement('style')
+  tag.id = STYLE_ID
+  tag.dataset.plugin = 'dsh-triad'
+  tag.textContent = SHEET
+  document.head.appendChild(tag)
+}
+
+/** NavButton 属性。 */
+export interface NavButtonProps {
+  /** 行图标（svg 元素，颜色由样式表统一着色）。 */
+  icon: ReactNode
+  /** 行文字（rail 态不渲染）。 */
+  label: string
+  /** 折叠态（只留图标）。 */
+  rail?: boolean
+  /** 面板展开态（高亮底色）。 */
+  expanded?: boolean
+  /** 未读角标数（0/undefined 不显示；>99 显示 99+）。 */
+  badge?: number
+  /** 角标悬停提示。 */
+  badgeTitle?: string
+  /** 无障碍名（缺省用 label）。 */
+  ariaLabel?: string
+  /** 行尾附加内容（如今日用量数字；rail 态不渲染）。 */
+  trailing?: ReactNode
+  /** 悬停：滑出卡片（hover 模式）。 */
+  onMouseEnter?: (e: MouseEvent<HTMLButtonElement>) => void
+  /** 移出按钮：启动自动收回计时（hover 模式）。 */
+  onMouseLeave?: () => void
+  /** 点击（hover 模式 = 切换钉住）。 */
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void
+}
+
+/** 渲染一条导航行按钮（与 auto-nav 同款观感）。 */
+export function NavButton({
+  icon, label, rail = false, expanded = false, badge = 0, badgeTitle, ariaLabel, trailing,
+  onMouseEnter, onMouseLeave, onClick,
+}: NavButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="dsh-nav-btn"
+      data-rail={rail || undefined}
+      data-open={expanded || undefined}
+      aria-label={ariaLabel ?? label}
+      aria-expanded={expanded}
+      title={rail ? (ariaLabel ?? label) : undefined}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onClick={onClick}
+    >
+      {icon}
+      {!rail && <span className="dsh-nav-label">{label}</span>}
+      {!rail && trailing !== undefined && (
+        <span className="dsh-nav-trailing">{trailing}</span>
+      )}
+      {badge > 0 && (
+        <span className="dsh-nav-badge" title={badgeTitle}>{badge > 99 ? '99+' : String(badge)}</span>
+      )}
+    </button>
+  )
+}
+
+/** 便捷组合：portal 到指定槽位（slot 未就位时不渲染）。 */
+export function NavPortal({ name, children }: { name: NavSlotName; children: ReactNode }): JSX.Element | null {
+  const slot = useNavSlot(name)
+  if (slot === null) return null
+  return createPortal(children, slot)
+}
+
+/** 「导航行右缘」滑出锚点（PopoverShell 用）。
+ *
+ * 取按钮所在行容器（dsh-triad 的 nav host）的右缘 +8 作水平位；top 取按钮
+ * 顶缘 -6。nav host 是统一的行容器，三个入口共用。 */
+export function navAnchorFrom(el: Element | null): PopoverAnchor | null {
+  if (el === null) return null
+  const row = el.closest(`#${HOST_ID}`)
+  if (row === null) return null
+  const rowRect = row.getBoundingClientRect()
+  const btnRect = el.getBoundingClientRect()
+  return { left: Math.round(rowRect.right + 8), top: Math.round(btnRect.top - 6) }
+}
