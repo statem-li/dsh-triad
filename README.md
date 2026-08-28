@@ -21,13 +21,9 @@ dsh plugin --profile web add github:statem-li/dsh-triad
 插件自带 bundle patch（`cordis.patch.yml`），`dsh plugin add` 会自动把它注册进
 profile 的 bundle 层，**不需要手改任何配置文件**。
 
-> 如果你的 pnpm 提示构建脚本被拦截，往 profile 的 `pnpm-workspace.yaml` 加一行即可
-> （`lib/` 已随仓库提交，不加也能用；加了只是让它在安装时重新构建一遍）：
->
-> ```yaml
-> allowBuilds:
->   dsh-triad: true
-> ```
+构建产物 `lib/` 随仓库一起提交，所以安装期无需执行构建脚本——pnpm ≥ 10 默认
+拦截 git 依赖的 `prepare`/`postinstall`，带脚本会让上面那条命令直接失败。
+想从源码构建见下方「从源码构建」。
 
 ### 卸载
 
@@ -125,9 +121,11 @@ consolidateTimeoutMs 60000                       embeddingProvider off
 ```bash
 git clone https://github.com/statem-li/dsh-triad.git
 cd dsh-triad
-pnpm install     # 触发 prepare，自动构建
-pnpm build       # 或手动构建
+pnpm install
+pnpm build
 ```
+
+改完源码后记得重新构建并提交 `lib/`，否则安装方拿到的还是旧产物。
 
 产物：
 

@@ -56,8 +56,9 @@
     "esbuild": "^0.25.0"
   },
   "scripts": {
-    "prepare": "node build.mjs",
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "smoke": "node scripts/smoke-client.mjs",
+    "smoke:host": "node scripts/smoke-host.mjs"
   },
   "engines": {
     "node": ">=22"
