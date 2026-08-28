@@ -1,0 +1,9 @@
+# Build artifacts are committed on purpose (see .gitignore), so their bytes must
+# be reproducible: pin them to LF so a Windows checkout does not silently
+# rewrite every line ending and break `md5sum lib/index.js` comparisons against
+# an installed copy.
+lib/*.js   text eol=lf
+lib/*.map  -text
+
+# Everything else can follow the platform default.
+*          text=auto
