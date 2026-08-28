@@ -16,6 +16,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { applyMemoryClient } from './memory/index.js'
 import { apply as applyUsageEntries } from './usage/entry.js'
 import { apply as applySkillSource } from './skill-source/index.js'
+import { buildActivityGrid, activityColor, ACTIVITY_COLUMNS } from './usage/dashboard/ActivityGrid.js'
 
 /** Client services required before the browser half activates. */
 export const inject = ['slots', 'locale', 'inputTriggers', 'sessions']
@@ -34,3 +35,6 @@ export function apply(ctx: ClientContext): void {
   safe('usage', applyUsageEntries, ctx)
   safe('skills', applySkillSource, ctx)
 }
+
+/** 纯逻辑导出：供 smoke 测试直接断言「Token 活动」贡献热力模型。 */
+export { buildActivityGrid, activityColor, ACTIVITY_COLUMNS }

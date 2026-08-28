@@ -15,6 +15,7 @@ import { RankBars } from './charts/RankBars'
 import { Heatmap } from './charts/Heatmap'
 import { ErrorCard } from './primitives/ErrorCard'
 import { useIsMobile } from '../../responsive'
+import { ActivityGrid, type ActivityMode } from './ActivityGrid'
 
 export interface UsageTabProps {
   range: DateRange
@@ -147,6 +148,7 @@ function buildDetailRows(days: UsageDay[], query: string): DetailRow[] {
 export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX.Element {
   const [usage, setUsage] = useState<UsageDay[] | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [activityMode, setActivityMode] = useState<ActivityMode>('day')
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [retryTick, setRetryTick] = useState(0)
@@ -216,6 +218,17 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Token 活动：全量记录贡献热力（52 周，不限查询范围；点格子看当日模型明细） */}
+      <div style={rowCard}>
+        <ActivityGrid
+          days={usage}
+          mode={activityMode}
+          onMode={setActivityMode}
+          selectedKey={selectedDay}
+          onSelect={setSelectedDay}
+        />
+      </div>
+
       {/* 热力行：grid 强制两列（flex wrap 会被年热力的宽内容撑到换行） */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8, alignItems: 'start' }}>
         <div style={rowCard}>

@@ -236,6 +236,88 @@ try {
   fail(`apply(ctx) threw: ${error?.stack ?? error}`)
 }
 
+// ── Token 活动：52 周贡献热力模型（纯函数断言） ─────────────────────────
+const { buildActivityGrid, activityColor, ACTIVITY_COLUMNS: ACTIVITY_COLS } = mod
+if (typeof buildActivityGrid !== 'function' || typeof activityColor !== 'function') {
+  fail('buildActivityGrid / activityColor must be exported from the client bundle')
+} else if (ACTIVITY_COLS !== 52) {
+  fail(`Token 活动 must span 52 week columns, got ${ACTIVITY_COLS}`)
+} else {
+  pass('Token 活动 exports 52-week grid model')
+}
+
+const weekKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const weekdayIdx = (key) => { const [y, m, d] = key.split('-').map(Number); return (new Date(y, m - 1, d).getDay() + 6) % 7 }
+const fixedToday = new Date(2026, 7, 23) // 2026-08-23（周日）
+const synthDays = []
+for (let i = 0; i < 60; i += 1) {
+  const d = new Date(2026, 7, 23 - i)
+  const wd = (d.getDay() + 6) % 7
+  const weekend = wd === 0 || wd === 6
+  synthDays.push({ date: weekKey(d), tokens: weekend ? 4000 : 90000 + (i % 9) * 55000, requests: 3 + (i % 5), cacheHitRate: i % 4 === 0 ? 0 : 87.3 })
+}
+
+if (typeof buildActivityGrid === 'function') {
+  const snap = buildActivityGrid(synthDays, 'day', fixedToday)
+  if (snap.columns !== 52 || snap.cells.length !== 52 * 7) fail(`grid shape must be 52 x 7, got ${snap.cells.length} cells`)
+  else if (snap.rows.length !== 7 || snap.rows.some((row) => row.length !== 52)) fail('rows must be 7 rows of 52')
+  else pass('grid shape is 52 weeks x 7 weekday rows')
+
+  const todayCell = snap.cells.find((c) => c.key === '2026-08-23')
+  if (todayCell === undefined || todayCell.isToday !== true || todayCell.column !== 51) fail('today must sit in the last column')
+  else pass('grid right-aligns on the current week')
+
+  const futureCount = snap.cells.filter((c) => !c.past).length
+  if (futureCount !== 6 - weekdayIdx('2026-08-23')) fail(`only the current week holds future placeholders, got ${futureCount}`)
+  else pass('future days are in-week placeholders only')
+
+  const byDate = new Map(synthDays.map((d) => [d.date, d.tokens]))
+  const dayOk = snap.cells.every((c) => c.tokens === (byDate.get(c.key) ?? 0))
+  if (!dayOk) fail('day mode must carry each day own tokens')
+  else pass('day mode carries per-day tokens')
+
+  const weekSnap = buildActivityGrid(synthDays, 'week', fixedToday)
+  let weekOk = true
+  for (let c = 0; c < 52; c += 1) {
+    if (new Set(weekSnap.rows.map((row) => row[c].tokens)).size !== 1) { weekOk = false; break }
+  }
+  if (!weekOk) fail('week mode must share one Monday-start total per column')
+  else pass('week mode shares one total per column')
+
+  const cumSnap = buildActivityGrid(synthDays, 'cumulative', fixedToday)
+  let prev = -1
+  let cumOk = true
+  for (const cell of cumSnap.cells) {
+    if (cell.tokens < prev) { cumOk = false; break }
+    prev = cell.tokens
+  }
+  if (!cumOk) fail('cumulative must never decrease')
+  else pass('cumulative mode is monotonic')
+
+  const expectedTotal = synthDays.reduce((sum, d) => sum + d.tokens, 0)
+  if (cumSnap.cells[cumSnap.cells.length - 1].tokens !== expectedTotal) fail('cumulative tail must equal the token total')
+  else pass('cumulative tail equals total tokens')
+
+  const expectedPeak = Math.max(...synthDays.map((d) => d.tokens))
+  if (snap.peakDay === null || snap.peakTokens !== expectedPeak) fail(`peak day must be the busiest day, expected ${expectedPeak}`)
+  else pass('peak-day detection ok')
+
+  if (snap.activeDays !== synthDays.filter((d) => d.tokens > 0).length) fail('activeDays must count non-zero days')
+  else pass('active-day count ok')
+}
+
+if (typeof activityColor === 'function') {
+  const alphaOf = (t, m) => Number(activityColor(t, m).match(/rgba\(\d+, \d+, \d+, ([\d.]+)\)/)?.[1] ?? -1)
+  if (!activityColor(0, 100).includes('color-mix')) fail('zero must render the neutral gray fill')
+  else if (alphaOf(1e9, 1e9) !== 1) fail('the busiest cell must reach alpha 1')
+  else {
+    const ramp = [1, 1000, 100000, 10000000].map((t) => alphaOf(t, 10000000))
+    if (ramp.some((a, i) => i > 0 && a <= ramp[i - 1])) fail(`color ramp must be monotonic: ${ramp.join(',')}`)
+    else if (ramp[0] !== 0.25) fail(`the quietest cell must start at alpha 0.25, got ${ramp[0]}`)
+    else pass(`activity color ramp ok: ${ramp.map((a) => a.toFixed(3)).join(' -> ')}`)
+  }
+}
+
 console.log(`\n${process.exitCode ? 'SMOKE FAILED' : 'SMOKE PASSED'} — ${CLIENT}`)
 // Explicit exit: stubbed modules may hold listeners/timers that keep node alive.
 process.exit(process.exitCode ?? 0)
