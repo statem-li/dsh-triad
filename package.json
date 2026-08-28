@@ -24,10 +24,9 @@
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
+  "comment:files": "只发运行时需要的部分：lib 是构建产物（vendor 的叶子模块在构建时已内联进去），scripts 供已安装位置自检。src/vendor 仅用于重新构建，装到 profile 里只会白白撑大安装体积——git 依赖安装时 pnpm 会先整包复制到临时目录再删除，文件越多这一步越重。",
   "files": [
     "lib",
-    "vendor",
-    "src",
     "scripts",
     "build.mjs",
     "cordis.patch.yml",
