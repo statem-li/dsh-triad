@@ -3,16 +3,26 @@
  *
  * Two bundles from one esbuild run:
  *
- *   lib/index.js   host half    ESM,  node platform,  @deepseek-ai/* external
+ *   lib/index.js   host half    ESM,  node platform,  self-contained
  *   lib/client.js  browser half CJS,  browser platform, wrapped in the
  *                  `window.__ModuleLoader__.load` factory contract
+ *
+ * The host half must stay **resolvable from an installed location**, i.e. from
+ * inside `~/.dsh/profiles/<p>/node_modules/`. That rules out importing most
+ * `@deepseek-ai/*` packages at runtime: DSH ships those as source only (their
+ * `lib/` holds `.d.ts` plus a couple of hand-built entries, no `lib/index.js`),
+ * and resolves them at runtime through tsx + `tsconfig.base.json` `paths`.
+ * tsx only applies `paths` to importers *outside* node_modules, so a plugin
+ * that was installed with `dsh plugin add` gets plain node resolution and
+ * lands on a missing file. See vendor/README.md for the full rule and
+ * `assertHostExternals()` below for the guard that enforces it.
  *
  * Usage: node build.mjs
  */
 
 import { createRequire } from 'node:module'
-import { existsSync, readdirSync } from 'node:fs'
-import { resolve, dirname, join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { resolve, dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -106,7 +116,26 @@ const clientBundle = {
   },
 }
 
-/** Host half: ESM, self-contained except node builtins and DSH platform packages. */
+/**
+ * The only bare specifiers the host bundle may leave to runtime resolution.
+ *
+ * A plugin installed into a profile's node_modules can only resolve packages
+ * that DSH actually ships runtime JS for. `@deepseek-ai/cordis` and
+ * `@deepseek-ai/dsh-util-crypto` both do (and the latter has no imports of its
+ * own). Anything else under `@deepseek-ai/` must be vendored into `vendor/`
+ * instead — see vendor/README.md.
+ *
+ * This is an allowlist rather than "whatever resolved at build time" on
+ * purpose: the build runs from a source checkout where *every* `@deepseek-ai/*`
+ * name resolves to a source dir, so a build-time check would pass and the
+ * installed plugin would still crash at startup.
+ */
+const HOST_RUNTIME_EXTERNAL_ALLOWLIST = new Set([
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-util-crypto',
+])
+
+/** Host half: ESM, self-contained except node builtins and the allowlist above. */
 const hostBundle = {
   entryPoints: [resolve(HERE, 'src/host.ts')],
   outfile: resolve(HERE, 'lib/index.js'),
@@ -120,6 +149,11 @@ const hostBundle = {
   // plugin's node_modules is a junction into the DSH profile (so @deepseek-ai/*
   // resolves to the very same module instances the host uses), and a junction
   // cannot also hold a private yauzl copy.
+  //
+  // `@deepseek-ai/*` is external *at bundle time* only so esbuild keeps the
+  // names verbatim; `assertHostExternals()` then checks every surviving name
+  // against the allowlist, so an unvendored dependency fails the build here
+  // instead of at plugin startup on someone else's machine.
   external: [],
   // yauzl is inlined (see above) and is CJS: it calls bare `require('fs')`.
   // In an ESM bundle that throws "Dynamic require ... is not supported", so
@@ -138,5 +172,47 @@ const hostBundle = {
   }],
 }
 
+/**
+ * Fail the build if the host bundle still hands an unresolvable specifier to
+ * runtime resolution.
+ *
+ * Catches exactly the regression that motivated `vendor/`: adding
+ * `import { X } from '@deepseek-ai/dsh-llm'` to a host module looks fine on a
+ * dev machine (esbuild externalises it, the source checkout resolves it, the
+ * smoke test under tsx passes) and then throws ERR_MODULE_NOT_FOUND for every
+ * user who installed the plugin.
+ */
+function assertHostExternals(outfile) {
+  const source = readFileSync(outfile, 'utf8')
+  const specifiers = new Set()
+  for (const m of source.matchAll(/(?:^|[;\n])\s*(?:import|export)[\s\S]*?from\s*["']([^"']+)["']/g)) {
+    specifiers.add(m[1])
+  }
+  for (const m of source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) {
+    specifiers.add(m[1])
+  }
+
+  const violations = [...specifiers].filter((spec) => {
+    if (spec.startsWith('node:')) return false
+    return !HOST_RUNTIME_EXTERNAL_ALLOWLIST.has(spec)
+  })
+
+  if (violations.length > 0) {
+    throw new Error(
+      'dsh-triad: host bundle imports packages that an installed plugin cannot resolve.\n'
+      + violations.map(v => `  - ${v}`).join('\n')
+      + '\n\n'
+      + 'DSH ships @deepseek-ai/* as source only; a plugin inside a profile\'s\n'
+      + 'node_modules gets plain node resolution and finds no lib/index.js.\n'
+      + 'Vendor the leaf modules you need into vendor/ (see vendor/README.md),\n'
+      + `or add the name to HOST_RUNTIME_EXTERNAL_ALLOWLIST in ${basename(fileURLToPath(import.meta.url))}\n`
+      + 'after verifying the package really ships runtime JS.',
+    )
+  }
+  return [...specifiers]
+}
+
 await Promise.all([esbuild.build(clientBundle), esbuild.build(hostBundle)])
+const hostExternals = assertHostExternals(resolve(HERE, 'lib/index.js'))
 console.log('[dsh-triad] built lib/index.js + lib/client.js')
+console.log(`[dsh-triad] host runtime imports: ${hostExternals.length === 0 ? '(none)' : hostExternals.join(', ')}`)

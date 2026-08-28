@@ -4,7 +4,7 @@
  * LLM 失败/超时一律跳过本轮，绝不阻塞对话。
  */
 
-import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, createUserMessage } from '../../../vendor/dsh-llm/index.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ExtractCandidate, MemoryConfig, MemoryEntry } from '../types.js'
 import { semanticSimilarity } from './retrieval.js'

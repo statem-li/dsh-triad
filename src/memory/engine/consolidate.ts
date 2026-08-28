@@ -11,7 +11,7 @@
  * - LLM 失败/超时/解析失败一律空结果，绝不阻塞每日编译。
  */
 
-import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, createUserMessage } from '../../../vendor/dsh-llm/index.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ChangeRecord,

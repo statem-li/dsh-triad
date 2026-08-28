@@ -6,7 +6,7 @@
  * 命中刷新：被注入的条目距上次命中 ≥1 天时刷新 lastHitAt 并加分。
  */
 
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '../../../vendor/dsh-llm/index.js'
 import type { MemoryConfig } from '../types.js'
 import { buildInjectionText, selectInjectionEntries, workspaceHashOf } from './compile.js'
 import { searchEntries } from './retrieval.js'

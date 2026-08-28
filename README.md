@@ -139,24 +139,54 @@ checkout 的 pnpm store（贡献者便利）→ 明确报错提示 `pnpm install
 
 ### 外部化策略（刻意不同）
 
-- **`lib/index.js`**：`@deepseek-ai/*` 全部 external。DSH 运行时靠
-  **tsx + `tsconfig.base.json` 的 `paths`** 把包解析到源码目录
-  （如 `@deepseek-ai/dsh-tools` → `packages/core/tools/src`），插件必须共享宿主的
-  模块实例，不能打包进去。`yauzl` 内联（配 `createRequire` banner 解决 CJS 依赖
-  在 ESM 产物里的 `Dynamic require`）。
+- **`lib/index.js`**：自包含。除 `node:*` 内置模块外，留给运行时解析的只有
+  `@deepseek-ai/dsh-util-crypto`（一个零依赖的 UUID 工具，DSH 有真实产物）。
+  `yauzl` 内联（配 `createRequire` banner 解决 CJS 依赖在 ESM 产物里的
+  `Dynamic require`）。
 - **`lib/client.js`**：`react` / `react-dom` / `react/jsx-runtime` /
   `@deepseek-ai/dsh-client-*` 全部 external，由 DSH 模块表提供同一份实例。
+
+#### 为什么宿主半身不能 import 大部分 `@deepseek-ai/*`
+
+这是本插件踩过的最大的坑，值得单独说清楚。
+
+DSH 的 `@deepseek-ai/*` 包**只发源码，不发运行时产物**。装到 profile 的
+`node_modules` 之后，`@deepseek-ai/dsh-llm` 的 `lib/` 里只有 `.d.ts` 和几个
+手工入口——**没有 `lib/index.js`**，尽管 `package.json` 写着
+`"main": "lib/index.js"`。
+
+DSH 自己没事，是因为它跑在 tsx 下，靠 `tsconfig.base.json` 的 `paths` 把包名
+映射回源码目录（`@deepseek-ai/dsh-llm` → `packages/llm/llm/src`）。而 tsx 的
+`resolveTsPaths` **只对不在 `node_modules` 里的 importer 应用 `paths`**。实测：
+
+| importer 位置 | `dsh-llm` | `dsh-tools` | `cordis` | `schemastery` |
+| --- | --- | --- | --- | --- |
+| DSH checkout 内 | ✅ | ✅ | ✅ | ✅ |
+| profile 的 node_modules 内 | ❌ | ❌ | ✅ | ✅ |
+
+于是：从源码跑一切正常，`dsh plugin add` 装进去之后启动就
+`ERR_MODULE_NOT_FOUND`。**构建期的成功完全不能说明问题**——esbuild 把
+`@deepseek-ai/*` 原样 external，checkout 里每个名字都能解析，只有装到别人机器上
+才炸。
+
+对策是把用到的**叶子模块**（不依赖 cordis、不注册服务、纯函数/纯类）逐字复制进
+`vendor/`，详见 [`vendor/README.md`](vendor/README.md)。`build.mjs` 末尾的
+`assertHostExternals()` 会扫描产物里所有留给运行时的裸导入，命中白名单之外就
+**直接让构建失败**。
 
 ### 测试
 
 ```bash
-# 宿主半身：必须在 DSH checkout 下用 tsx 跑，否则 @deepseek-ai/* 解析不到
-cd /path/to/deepseek-harness
-node --import tsx/esm /path/to/dsh-triad/scripts/smoke-host.mjs
+# 宿主半身：产物自包含，裸 node 即可，不依赖 tsx
+node scripts/smoke-host.mjs
 
 # 浏览器半身：独立可跑
 node scripts/smoke-client.mjs
 ```
+
+想复现「已安装位置」的真实条件，可以把 `lib/` 同步到
+`~/.dsh/profiles/<p>/node_modules/dsh-triad/lib/`，再在**那个目录**下裸跑
+`node scripts/smoke-host.mjs`——这正是本次修复的验收方式。
 
 ---
 
@@ -169,6 +199,9 @@ node scripts/smoke-client.mjs
 - **侧边栏槽位全部自建**。webui 原版依赖一个被 DSH 0.1.2 删掉的
   `#dsh-automation-menu-host`（`grep` 全空），卸载 webui 后无人再建，导致
   技能/记忆入口永远拿不到 portal 目标。现在四个槽位由插件自己创建。
+- **宿主半身不 import 未验证的 `@deepseek-ai/*`**。DSH 这些包只发源码，装进
+  profile 后解析不到运行时入口；用到的叶子模块内联在 `vendor/`，并由构建末尾的
+  `assertHostExternals()` 兜底。详见[外部化策略](#外部化策略刻意不同)。
 - HTTP 路由全部 loopback-only，浏览器半身通过同源 fetch 取数。
 
 ## 环境
