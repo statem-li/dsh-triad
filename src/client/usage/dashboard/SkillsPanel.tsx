@@ -296,7 +296,11 @@ const SHEET = `
 .skm-inline-form{flex:none;display:flex;align-items:center;gap:6px}
 /* 块级变体：width:100% 让它在 .skm-bundle（flex-wrap）里自动换行独占一行，
    输入框因此能吃满整行宽度，不必被两个按钮挤到只剩默认 20 字符。 */
-.skm-inline-form-block{width:100%;box-sizing:border-box;padding:0 8px 8px}
+.skm-inline-form-block{width:100%;box-sizing:border-box;padding:0 8px 8px;animation:skm-form-in 160ms ease-out}
+@keyframes skm-form-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+/* 改名成功：卡片边框高亮脉冲（1 秒后回落），与整体深色卡片节奏一致 */
+.skm-bundle[data-renamed='true']{animation:skm-card-pop 900ms ease-out}
+@keyframes skm-card-pop{0%{border-color:var(--dsw-alias-state-business-primary,#4a9eff);box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary,#4a9eff)}55%{border-color:var(--dsw-alias-state-business-primary,#4a9eff);box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary,#4a9eff)}100%{border-color:var(--dsw-alias-border-l1,rgba(255,255,255,.08));box-shadow:none}}
 .skm-inline-input{flex:1;min-width:0;height:32px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:8px;padding:0 10px;font-size:13px;color:var(--dsw-alias-label-primary,#eee);background:var(--dsw-alias-bg-base,#0e1116)}
 .skm-inline-input::placeholder{color:var(--dsw-alias-label-tertiary,#888)}
 .skm-bundle-select{display:flex;align-items:center}
@@ -701,6 +705,9 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [creatingBundle, setCreatingBundle] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ bundleId: string; name: string } | null>(null)
   const [renaming, setRenaming] = useState(false)
+  // 改名成功的卡片 id：触发一次高亮脉冲，随后自动清除。
+  const [renamedFlash, setRenamedFlash] = useState<string | null>(null)
+  const renamedTimer = useRef<number | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [install, setInstall] = useState<InstallState | null>(null)
@@ -774,6 +781,11 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     // reload 拆分为变化键；open 恒 true（本组件在打开时才渲染）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reload])
+
+  // 卸载时清掉改名高亮定时器，避免卸载后 setState。
+  useEffect(() => () => {
+    if (renamedTimer.current !== null) window.clearTimeout(renamedTimer.current)
+  }, [])
 
   const runToggle = async (key: string, action: () => Promise<unknown>): Promise<void> => {
     if (toggling.has(key)) return
@@ -1003,6 +1015,11 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     setRenaming(true)
     try {
       await skillApi.renameBundle(renameTarget.bundleId, renameTarget.name.trim())
+      // 改名成功后让卡片闪一下高亮（1600ms 后自动清除）。
+      const renamedId = renameTarget.bundleId
+      if (renamedTimer.current !== null) window.clearTimeout(renamedTimer.current)
+      setRenamedFlash(renamedId)
+      renamedTimer.current = window.setTimeout(() => { setRenamedFlash(null) }, 1600)
       setRenameTarget(null)
       refresh()
     } catch (error) {
@@ -1223,7 +1240,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                   const bundleEnabled = bundleEnabledIn(bundle)
                   const bundleToggling = toggling.has(`bundle:${bundle.id}`)
                   return (
-                    <li key={bundle.id} className={css.bundle} data-open={open2 ? 'true' : undefined}>
+                    <li key={bundle.id} className={css.bundle} data-open={open2 ? 'true' : undefined} data-renamed={renamedFlash === bundle.id ? 'true' : undefined}>
                       {/* 整行常驻：开关 / 名称 / 数量 / 箭头 / 改名删除钮在改名期间
                           全部保留。原来这里是「表单 vs 整行」二选一，一点改名整行内容
                           就被替换掉，看起来像技能包凭空消失。 */}
@@ -1270,7 +1287,13 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                           <input className={css.inlineInput} value={renameTarget.name} placeholder={t('renameBundlePlaceholder')}
                             aria-label={t('renameBundlePlaceholder')} autoFocus disabled={renaming}
                             onChange={(event) => {
-                              setRenameTarget((current) => current === null ? current : { ...current, name: event.currentTarget.value })
+                              // 先把值取出再进 setState 回调：React 合成事件在
+                              // 回调执行完毕后会把 currentTarget 置空，若在函数式
+                              // updater 里才读 event.currentTarget.value，渲染阶段
+                              // 会抛 Cannot read properties of null，整个技能面板
+                              // 被 ErrorBoundary 摘掉——表现就是「改名时卡片消失」。
+                              const next = event.currentTarget.value
+                              setRenameTarget((current) => current === null ? current : { ...current, name: next })
                             }} />
                           <Button variant="primary" type="submit" disabled={renaming || renameTarget.name.trim() === ''}>{t('rename')}</Button>
                           <Button variant="outline" type="button" disabled={renaming} onClick={() => { setRenameTarget(null) }}>{t('cancel')}</Button>
