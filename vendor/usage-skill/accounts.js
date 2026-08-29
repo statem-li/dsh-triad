@@ -1005,14 +1005,65 @@ async function senseNovaAccessToken(spec, credentials, deps, now) {
 	return token;
 }
 
-async function querySenseNova(spec, credentials, deps, now) {
-	const token = await senseNovaAccessToken(spec, credentials, deps, now);
-	if (token.error === "not-configured") return unavailableSnapshot(spec, "not-configured", now, { missingCredentials: token.missingCredentials });
-	const payload = decodeJwtPayload(token.accessToken);
+/**
+ * SenseNova 已从「按模型百分比」升级为「积分制」：配额按积分池（通用池 /
+ * Flash-Lite 专属池）划分，每个池有 5h 滚动窗口与 7 天窗口的积分额度，
+ * 以及活动固定积分（grant，30 天有效）。控制台新接口
+ * `/lite/console/v1/tokenplan/pool-usage` 返回池级数据；旧接口
+ * `/lite/console/v1/user/coding-plan/usages`（按模型剩余百分比）仍可用，
+ * 作为旧平台的回退。
+ */
+const SENSENOVA_TOKENPLAN_USAGE = `${SENSENOVA_PLATFORM_ORIGIN}/lite/console/v1/tokenplan/pool-usage`;
+
+async function querySenseNovaPools(accessToken, spec, deps, now) {
+	const body = await requestJson(SENSENOVA_TOKENPLAN_USAGE, { method: "GET", headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" } }, deps);
+	const pools = Array.isArray(body?.pools) ? body.pools : null;
+	if (pools === null || pools.length === 0) throw statusError("invalid-response", "SenseNova pool usage response is missing pools");
+	const windows = [];
+	for (const pool of pools) {
+		if (pool === null || typeof pool !== "object" || Array.isArray(pool)) continue;
+		const poolName = nonEmptyString(pool.name) ?? "积分池";
+		const poolType = nonEmptyString(pool.pool_type) ?? "default";
+		const modelCount = Array.isArray(pool.model_ids) ? pool.model_ids.length : 0;
+		const grantBalance = numberOrNull(pool.grant_balance);
+		const grantExpiryRaw = numberOrNull(pool.nearest_grant_expiry);
+		const grantExpiryAt = grantExpiryRaw !== null && grantExpiryRaw > 0 ? toIso(grantExpiryRaw) : null;
+		for (const [winKey, winType, winLabel] of [["window_5h", "5h", "5h 窗口"], ["window_7d", "7d", "7天窗口"]]) {
+			const w = pool[winKey];
+			if (w === null || typeof w !== "object" || Array.isArray(w)) continue;
+			const limit = numberOrNull(w?.limit);
+			const used = numberOrNull(w?.used);
+			const remaining = numberOrNull(w?.remaining);
+			if (limit === null || limit <= 0 || used === null || remaining === null) continue;
+			const resetsAt = toIso(numberOrNull(w?.reset_at));
+			windows.push({
+				kind: `${poolName} · ${winLabel}`,
+				usedPercent: round1(Math.max(0, Math.min(100, used / limit * 100))),
+				remainingPercent: round1(Math.max(0, Math.min(100, remaining / limit * 100))),
+				...(resetsAt === null ? {} : { resetsAt }),
+				// 积分制扩展字段：池名/池类型/窗口类型/积分绝对值/模型数/活动积分。
+				poolName,
+				poolType,
+				windowType: winType,
+				limit,
+				used,
+				remaining,
+				modelCount,
+				...(grantBalance === null ? {} : { grantBalance }),
+				...(grantExpiryAt === null ? {} : { grantExpiryAt })
+			});
+		}
+	}
+	if (windows.length === 0) throw statusError("invalid-response", "SenseNova pool usage response has no usable quota windows");
+	return { ...baseSnapshot(spec, "ok", now), plan: nonEmptyString(body?.plan?.name) ?? "Token Plan", windows, alert: subscriptionAlert(windows) };
+}
+
+async function querySenseNovaLegacy(accessToken, spec, deps, now) {
+	const payload = decodeJwtPayload(accessToken);
 	const tenantId = nonEmptyString(payload?.ext?.tenant_id) ?? nonEmptyString(payload?.tenant_id);
 	if (tenantId === null) throw statusError("invalid-response", "SenseNova token does not contain tenant_id");
 	const url = `${SENSENOVA_PLATFORM_ORIGIN}/lite/console/v1/user/coding-plan/usages?account_id=${encodeURIComponent(tenantId)}`;
-	const body = await requestJson(url, { method: "GET", headers: { authorization: `Bearer ${token.accessToken}`, accept: "application/json" } }, deps);
+	const body = await requestJson(url, { method: "GET", headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" } }, deps);
 	if (body === null || typeof body !== "object" || Array.isArray(body)) throw statusError("invalid-response", "SenseNova usage response must be an object");
 	const pct = body.model_remaining_percent;
 	if (pct === null || typeof pct !== "object" || Array.isArray(pct)) throw statusError("invalid-response", "SenseNova usage response is missing model_remaining_percent");
@@ -1029,6 +1080,18 @@ async function querySenseNova(spec, credentials, deps, now) {
 	}
 	if (windows.length === 0) throw statusError("invalid-response", "SenseNova usage response has no usable quota windows");
 	return { ...baseSnapshot(spec, "ok", now), plan: "Token Plan", windows, alert: subscriptionAlert(windows) };
+}
+
+async function querySenseNova(spec, credentials, deps, now) {
+	const token = await senseNovaAccessToken(spec, credentials, deps, now);
+	if (token.error === "not-configured") return unavailableSnapshot(spec, "not-configured", now, { missingCredentials: token.missingCredentials });
+	try {
+		return await querySenseNovaPools(token.accessToken, spec, deps, now);
+	} catch (error) {
+		// 新积分池接口在旧平台上不存在（404/405 → unsupported）时回退旧接口。
+		if (error?.providerStatus !== "unsupported") throw error;
+		return await querySenseNovaLegacy(token.accessToken, spec, deps, now);
+	}
 }
 
 /** Query one adapter and return a secret-free normalized account snapshot. */

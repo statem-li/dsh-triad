@@ -15,6 +15,23 @@ export interface ProviderInfo {
   fetchedAt: number | null
   alert: { level: 'normal' | 'warning' | 'critical' | 'unknown'; metric: string; value: number | null } | null
 }
+export interface QuotaWindow {
+  kind: string
+  usedPercent: number
+  remainingPercent: number
+  resetsAt?: string
+  /** 积分制（SenseNova tokenplan pool-usage）扩展字段。 */
+  poolName?: string
+  poolType?: 'default' | 'dedicated' | string
+  windowType?: '5h' | '7d' | string
+  limit?: number
+  used?: number
+  remaining?: number
+  modelCount?: number
+  grantBalance?: number
+  grantExpiryAt?: string
+}
+
 export interface AccountSnapshot {
   id: string
   displayName: string
@@ -23,7 +40,7 @@ export interface AccountSnapshot {
   status: string
   fetchedAt: number
   plan?: string
-  windows?: Array<{ kind: string; usedPercent: number; remainingPercent: number; resetsAt?: string }>
+  windows?: QuotaWindow[]
   alert?: { level: string; metric: string; value: number | null }
 }
 
