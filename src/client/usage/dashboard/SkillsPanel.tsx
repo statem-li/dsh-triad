@@ -336,6 +336,16 @@ const css = {
   hubSectionHead: 'skm-hub-section-head',
   skillGridList: 'skm-skill-grid-list',
   noResult: 'skm-no-result',
+  // 归入技能包弹窗（卡片化）
+  assignModal: 'skm-assign-modal',
+  assignModalBody: 'skm-assign-modal-body',
+  assignList: 'skm-assign-list',
+  assignCard: 'skm-assign-card',
+  assignCardIcon: 'skm-assign-card-icon',
+  assignCardBody: 'skm-assign-card-body',
+  assignCardName: 'skm-assign-card-name',
+  assignCardDesc: 'skm-assign-card-desc',
+  assignGo: 'skm-assign-go',
   skillFiles: 'skm-skill-files',
   skillFile: 'skm-skill-file',
   skillPreview: 'skm-skill-preview',
@@ -535,6 +545,21 @@ const SHEET = `
 .skm-hub-section{display:flex;flex-direction:column;min-width:0}
 .skm-hub-section-head{display:flex;align-items:center;gap:8px;min-width:0;padding:2px 4px 0}
 .skm-no-result{padding:18px 4px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,#81858c)}
+
+/* ── 归入技能包弹窗（卡片化，与技能卡片同语言） ─────────────── */
+.skm-assign-modal{width:min(560px,calc(100vw - 48px))}
+.skm-assign-modal-body{overflow:hidden;display:flex;flex-direction:column;max-height:min(560px,calc(100vh - 180px))}
+.skm-assign-list{list-style:none;margin:0;padding:4px 2px 2px;display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+.skm-assign-card{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));border-radius:12px;background:var(--dsw-alias-bg-base,#fff);padding:10px 12px;cursor:pointer;font-family:inherit;text-align:left;opacity:0;animation:skm-card-in 240ms cubic-bezier(.2,.7,.3,1.06) forwards;animation-delay:calc(var(--skm-i,0)*45ms);transition:border-color 140ms ease,box-shadow 140ms ease,transform 140ms ease}
+.skm-assign-card:hover{border-color:var(--dsw-alias-state-success-primary,#22c55e);box-shadow:0 2px 8px rgba(16,24,40,.07);transform:translateY(-1px)}
+.skm-assign-card:active{transform:translateY(0) scale(.99)}
+.skm-assign-card-icon{flex:none;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));border-radius:10px;background:var(--dsw-alias-bg-module-platform,#f5f6f7);color:var(--dsw-alias-label-secondary,#61666b);transition:color 140ms ease,border-color 140ms ease}
+.skm-assign-card:hover .skm-assign-card-icon{color:var(--dsw-alias-label-primary,#0f1115);border-color:var(--dsw-alias-border-l3,rgba(0,0,0,.14))}
+.skm-assign-card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.skm-assign-card-name{font-size:14px;font-weight:600;line-height:20px;color:var(--dsw-alias-label-primary,#0f1115);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.skm-assign-card-desc{font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary,#81858c)}
+.skm-assign-go{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;color:var(--dsw-alias-label-caption,#adb2b8);transform:rotate(-90deg);transition:transform 160ms ease,background 140ms ease,color 140ms ease}
+.skm-assign-card:hover .skm-assign-go{transform:rotate(-90deg) translateX(2px);color:var(--dsw-alias-state-success-primary,#22c55e);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.03))}
 .skm-skill-list{list-style:none;margin:0;padding:2px 6px 6px;width:100%;display:flex;flex-direction:column;gap:2px}
 .skm-skill-item{display:flex;flex-direction:column;gap:2px;padding:2px 0;border-radius:8px}
 .skm-skill-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
@@ -633,11 +658,12 @@ const SHEET = `
 @media (prefers-reduced-motion: reduce) {
   .skm-skill-card{animation:none;opacity:1;transition:none}
   .skm-stat{animation:none;opacity:1;transition:none}
+  .skm-assign-card{animation:none;opacity:1;transition:none}
   .skm-bulk-menu{animation:none}
   .skm-toggle-knob{transition:none}
   .skm-toggle{transition:none}
   .skm-tag{transition:none}
-  .skm-skill-copy,.skm-skill-icon,.skm-skill-foot-icon,.skm-icon-action,.skm-bundle,.skm-hub-item,.skm-tool-button,.skm-banner,.skm-banner-btn,.skm-view-btn{transition:none}
+  .skm-skill-copy,.skm-skill-icon,.skm-skill-foot-icon,.skm-icon-action,.skm-bundle,.skm-hub-item,.skm-tool-button,.skm-banner,.skm-banner-btn,.skm-view-btn,.skm-drop-item,.skm-assign-card{transition:none}
 }
 `
 
@@ -1045,8 +1071,8 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   ensureStyles()
   const [state, setState] = useState<PanelState>({ status: 'loading' })
   const [reload, setReload] = useState(0)
-  // Skills Hub 默认全展开：collapsed 只记录「被用户收起」的分区（空 = 全部展开）。
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // 分区展开集合：默认空 = 全部收起（面板打开时只显示技能包标题行）。
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [viewer, setViewer] = useState<ViewerState | null>(null)
   const [assignTarget, setAssignTarget] = useState<SkillInfo | null>(null)
   const [newBundleOpen, setNewBundleOpen] = useState(false)
@@ -1218,7 +1244,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   }
 
   const toggleExpanded = (bundleId: string): void => {
-    setCollapsed((current) => {
+    setExpanded((current) => {
       const next = new Set(current)
       if (next.has(bundleId)) next.delete(bundleId)
       else next.add(bundleId)
@@ -1862,7 +1888,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
               ) : (
                 <>
                   {visibleBundles.map((bundle) => {
-                    const open2 = !collapsed.has(bundle.id)
+                    const open2 = expanded.has(bundle.id)
                     const renamingThis = renameTarget?.bundleId === bundle.id
                     const bundleEnabled = bundleEnabledIn(bundle)
                     const bundleToggling = toggling.has(`bundle:${bundle.id}`)
@@ -2034,26 +2060,32 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
           onClose={() => { setAssignTarget(null) }}
           closeLabel={t('close')}
           title={t('assignTitle', { name: assignTarget.name })}
-          className={css.viewerModal}
-          contentClassName={css.viewerBody}
+          className={css.assignModal}
+          contentClassName={css.assignModalBody}
         >
-          <div className={css.skillList}>
-            {bundles.length === 0 ? (
-              <p className={css.looseEmpty}>{t('assignEmpty')}</p>
-            ) : bundles.map((bundle) => (
-              <div
-                key={bundle.id}
-                className={css.skillRow}
-                style={{ cursor: 'pointer' }}
-                onClick={() => { void doAssign(assignTarget, bundle.id) }}
-              >
-                <span className={css.skillLabel}>
-                  <span className={css.skillName}>{bundle.name}</span>
-                  <span className={css.skillDescription}>{t('skillsCount', { n: bundle.skillCount })}</span>
-                </span>
-              </div>
-            ))}
-          </div>
+          {bundles.length === 0 ? (
+            <p className={css.looseEmpty}>{t('assignEmpty')}</p>
+          ) : (
+            <ul className={css.assignList}>
+              {bundles.map((bundle, index) => (
+                <li key={bundle.id} style={{ listStyle: 'none' }}>
+                  <button
+                    type="button"
+                    className={css.assignCard}
+                    style={{ '--skm-i': index } as CSSProperties}
+                    onClick={() => { void doAssign(assignTarget, bundle.id) }}
+                  >
+                    <span className={css.assignCardIcon} aria-hidden="true"><IconFolderOpenOutline16 size={16} /></span>
+                    <span className={css.assignCardBody}>
+                      <span className={css.assignCardName}>{bundle.name}</span>
+                      <span className={css.assignCardDesc}>{t('skillsCount', { n: bundle.skillCount })}</span>
+                    </span>
+                    <span className={css.assignGo} aria-hidden="true"><IconChevronDownOutline14 size={14} /></span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </Modal>
       )}
     </PopoverShell>
