@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
   Button, IconAgentPresetOutline16, IconChevronDownOutline14, IconCloseOutline16, IconEditOutline16,
-  IconFolderOpenOutline16, IconPlusOutline16, IconRefreshOutline14, IconSkillOutline16, IconTrashOutline16, Modal, Tooltip,
+  IconFolderOpenOutline16, IconPlusOutline16, IconRefreshOutline14, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { modalStaggerClass } from '../../modal-animation'
 import { PshBody, PshHead, PopoverShell, type PopoverAnchor } from '../../popover-shell'
@@ -982,6 +982,24 @@ function HubLogoIcon(): JSX.Element {
   )
 }
 
+/** 技能字标：瓷片内的「skill」文字 SVG（替换原图标，随瓷片 currentColor 着色）。 */
+function SkillWordmarkIcon(): JSX.Element {
+  return (
+    <svg width="34" height="15" viewBox="0 0 34 15" aria-hidden="true">
+      <text
+        x="17"
+        y="12"
+        textAnchor="middle"
+        fontSize="12"
+        fontWeight="800"
+        letterSpacing="-0.2"
+        fontFamily="ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"
+        fill="currentColor"
+      >skill</text>
+    </svg>
+  )
+}
+
 /**
  * 技能卡片（Skills Hub 风格）：
  *   [图标瓷片] 标题(粗)  [复制钮]      [绿色开关]
@@ -1057,7 +1075,7 @@ function SkillCard({ skill, bundleId, bundleName, enabled, lockedReason, scopeLa
       style={{ '--skm-i': index } as CSSProperties}
     >
       <div className={css.skillCardHead}>
-        <span className={css.skillIcon} aria-hidden="true"><IconSkillOutline16 size={20} /></span>
+        <span className={css.skillIcon} aria-hidden="true"><SkillWordmarkIcon /></span>
         <span className={css.skillTitleWrap}>
           <span className={css.skillTitle} title={skill.name}>{skill.name}</span>
           <button
