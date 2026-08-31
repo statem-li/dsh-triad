@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
-  Button, IconChevronDownOutline14, IconCloseOutline16, IconEditOutline16,
+  Button, IconAgentPresetOutline16, IconChevronDownOutline14, IconCloseOutline16, IconEditOutline16,
   IconFolderOpenOutline16, IconPlusOutline16, IconRefreshOutline14, IconSkillOutline16, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { modalStaggerClass } from '../../modal-animation'
@@ -528,7 +528,7 @@ const SHEET = `
 .skm-view-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b)}
 .skm-view-btn[data-active]{background:var(--dsw-alias-bg-module-platform,#eef0f2);color:var(--dsw-alias-label-primary,#0f1115)}
 .skm-view-btn:active{transform:scale(.94)}
-.skm-hint-row{flex:none;display:flex;align-items:center;gap:10px;padding:8px 16px 0}
+.skm-hint-row{flex:none;display:flex;align-items:center;gap:10px;padding:6px 16px 0}
 .skm-hint-row-text{flex:1;min-width:0;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary,#81858c)}
 .skm-banner{flex:none;display:flex;align-items:center;gap:12px;margin:10px 16px 0;box-sizing:border-box;border:1px solid #f2df9e;border-radius:14px;background:#fdf8e3;padding:10px 12px;cursor:pointer;transition:border-color 140ms ease,box-shadow 140ms ease,transform 140ms ease}
 .skm-banner:hover{border-color:#ecd58a;box-shadow:0 2px 8px rgba(232,163,61,.12)}
@@ -624,8 +624,8 @@ const SHEET = `
 .skm-toggle-off .skm-toggle-knob{transform:translateX(0)}
 .skm-bundle-toggle{flex:none;display:inline-flex;align-items:center;gap:4px;margin-left:0}
 
-/* ── Agent 预设分类圆球条 ─────────────────────────────────────── */
-.skm-preset-strip{flex:none;display:flex;align-items:flex-start;gap:14px;padding:2px 2px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+/* ── Agent 预设分类圆球条（弧形恢复，整列位于统计行与工具栏之间） ── */
+.skm-preset-strip{flex:none;display:flex;align-items:flex-start;gap:10px;padding:12px 16px 0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
 .skm-preset-strip::-webkit-scrollbar{display:none}
 .skm-preset-ball-wrap{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;width:56px;border:none;background:transparent;padding:0;cursor:pointer;font-family:inherit}
 .skm-preset-ball{position:relative;display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;box-sizing:border-box;font-size:17px;font-weight:600;line-height:1;color:var(--dsw-alias-label-primary,#eee);text-transform:uppercase;background:var(--dsw-alias-bg-layer-2,#262b36);border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.14));transition:border-color 140ms,filter 140ms}
@@ -796,10 +796,43 @@ function renderSkillMarkdown(text: string): string {
   return html
 }
 
-/** ---------------------------------------------------------------- 预设 */
+/** ---------------------------------------------------------------- 预设圆球 */
 
 /** 「全部 Agent」虚拟预设的哨兵 id（不会与真实 preset id 冲突：真实 id 不含 *）。 */
 const ALL_PRESETS = '*'
+
+/** 球内文字：中文取首字，拉丁取首字母。 */
+function ballInitial(label: string): string {
+  const trimmed = label.trim()
+  if (trimmed === '') return '?'
+  return [...trimmed][0] ?? '?'
+}
+
+/** 一个预设圆球（无底色，仅描边轮廓；有单独设置时右下角点亮小圆点）。 */
+function PresetBall({ id, label, active, dot, title, onSelect }: {
+  id: string
+  label: string
+  active: boolean
+  dot: boolean
+  title: string
+  onSelect: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={css.presetBallWrap}
+      data-active={active ? 'true' : undefined}
+      aria-pressed={active}
+      title={title}
+      onClick={onSelect}
+    >
+      <span className={css.presetBall} data-dot={dot ? 'true' : undefined}>
+        {id === ALL_PRESETS ? <IconAgentPresetOutline16 size={18} aria-hidden="true" /> : ballInitial(label)}
+      </span>
+      <span className={css.presetBallLabel}>{label}</span>
+    </button>
+  )
+}
 
 /** ---------------------------------------------------------------- 技能行 */
 
@@ -1598,7 +1631,51 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
             </div>
           </div>
 
-          {/* 工具栏：搜索 / 来源筛选 / 排序 / 批量 / 新建 / 预设 / 视图 */}
+          {/* Agent 预设分类：圆形球条（首个是「全部 Agent」= 全局层） */}
+          <div className={css.presetStrip} role="group" aria-label={t('presetStripLabel')}>
+            <PresetBall
+              id={ALL_PRESETS}
+              label={t('presetAll')}
+              active={activePreset === ALL_PRESETS}
+              dot={false}
+              title={t('presetAllName')}
+              onSelect={() => { setActivePreset(ALL_PRESETS) }}
+            />
+            {presets.map((preset) => {
+              const label = preset.name ?? preset.id
+              const count = Object.values(overrides[preset.id] ?? {}).filter((state2) => state2 === false).length
+              const parts = [label, preset.id]
+              if (preset.isDefault === true) parts.push(t('presetDefaultTag'))
+              if (count > 0) parts.push(t('presetOverrideCount', { n: count }))
+              return (
+                <PresetBall
+                  key={preset.id}
+                  id={preset.id}
+                  label={label}
+                  active={activePreset === preset.id}
+                  dot={count > 0}
+                  title={parts.join(' · ')}
+                  onSelect={() => { setActivePreset(preset.id) }}
+                />
+              )
+            })}
+          </div>
+
+          {/* 预设提示行：当前编辑层说明 + 清空该预设的单独设置 */}
+          <div className={css.hintRow}>
+            <span className={css.hintRowText}>
+              {activePreset === ALL_PRESETS
+                ? t('presetHintAll')
+                : t('presetHintScoped', { name: presets.find((preset) => preset.id === activePreset)?.name ?? activePreset })}
+            </span>
+            {activePreset !== ALL_PRESETS && Object.keys(presetOverride).length > 0 && (
+              <button type="button" className={css.presetReset} onClick={resetActivePreset}>
+                {t('presetReset')}
+              </button>
+            )}
+          </div>
+
+          {/* 工具栏：搜索 / 来源筛选 / 排序 / 批量 / 新建 / 视图 */}
           <div className={css.toolbar}>
             <div className={css.searchBox}>
               <SearchIcon />
@@ -1686,60 +1763,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                 {t('newBundle')}
               </button>
             </Tooltip>
-            <div className={css.dropWrap}>
-              <button
-                type="button"
-                className={css.presetPill}
-                aria-haspopup="menu"
-                aria-expanded={openMenu === 'preset'}
-                onClick={() => { setOpenMenu((value) => value === 'preset' ? null : 'preset') }}
-              >
-                <TagIcon />
-                <span className={css.presetPillLabel}>
-                  {activePreset === ALL_PRESETS
-                    ? t('presetAllName')
-                    : presets.find((preset) => preset.id === activePreset)?.name ?? activePreset}
-                </span>
-                <IconChevronDownOutline14 size={12} className={css.presetPillChevron} aria-hidden="true" />
-              </button>
-              {openMenu === 'preset' && (
-                <>
-                  <button type="button" className={css.bulkOverlay} aria-label={t('close')} onClick={() => { setOpenMenu(null) }} />
-                  <div className={css.dropMenu} role="menu">
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      className={css.dropItem}
-                      aria-checked={activePreset === ALL_PRESETS}
-                      onClick={() => { setActivePreset(ALL_PRESETS); setOpenMenu(null) }}
-                    >
-                      <span className={css.dropCheck} data-on={activePreset === ALL_PRESETS || undefined} aria-hidden="true">{activePreset === ALL_PRESETS ? '✓' : ''}</span>
-                      {t('presetAllName')}
-                    </button>
-                    {presets.map((preset) => {
-                      const active = activePreset === preset.id
-                      const count = Object.values(overrides[preset.id] ?? {}).filter((state2) => state2 === false).length
-                      const label = preset.name ?? preset.id
-                      return (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          role="menuitemradio"
-                          className={css.dropItem}
-                          aria-checked={active}
-                          title={[label, preset.id, preset.isDefault === true ? t('presetDefaultTag') : '', count > 0 ? t('presetOverrideCount', { n: count }) : ''].filter(Boolean).join(' · ')}
-                          onClick={() => { setActivePreset(preset.id); setOpenMenu(null) }}
-                        >
-                          <span className={css.dropCheck} data-on={active || undefined} aria-hidden="true">{active ? '✓' : ''}</span>
-                          {label}
-                          {count > 0 && <span className={css.dropBadge}>{count}</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
             <div className={css.viewToggle} role="group" aria-label={t('viewGrid')}>
               <button
                 type="button"
@@ -1762,20 +1785,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                 <GridIcon />
               </button>
             </div>
-          </div>
-
-          {/* 预设提示行：当前编辑层说明 + 清空该预设的单独设置 */}
-          <div className={css.hintRow}>
-            <span className={css.hintRowText}>
-              {activePreset === ALL_PRESETS
-                ? t('presetHintAll')
-                : t('presetHintScoped', { name: presets.find((preset) => preset.id === activePreset)?.name ?? activePreset })}
-            </span>
-            {activePreset !== ALL_PRESETS && Object.keys(presetOverride).length > 0 && (
-              <button type="button" className={css.presetReset} onClick={resetActivePreset}>
-                {t('presetReset')}
-              </button>
-            )}
           </div>
 
           {/* 黄色发现横幅：安装 / 导入入口（可拖放） */}
