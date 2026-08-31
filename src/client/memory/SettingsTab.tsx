@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MemoryConfigView } from './api.js'
+import type { MemoryConfigView, ModelCatalogView } from './api.js'
 import type { MemoryT } from './locales.js'
 import { css } from './styles.js'
 
@@ -166,13 +166,25 @@ function NumberRow({ label, hint, field, value, t, onCommit }: {
 }
 
 /** 设置 Tab 内容。 */
-export function SettingsTab({ config, busy = false, t, onPatch, onReset }: {
+export function SettingsTab({ config, busy = false, t, onPatch, onReset, listModels }: {
   config: MemoryConfigView | null
   busy?: boolean
   t: MemoryT
   onPatch: (patch: Partial<MemoryConfigView>) => void
   onReset: () => void
+  /** 可用模型目录加载器（整理模型下拉候选）。 */
+  listModels: () => Promise<ModelCatalogView[]>
 }): JSX.Element {
+  // 模型目录：挂载时拉取一次；失败静默（下拉回退为「跟随默认模型」，配置仍可选默认值）。
+  const [catalog, setCatalog] = useState<ModelCatalogView[]>([])
+  useEffect(() => {
+    let alive = true
+    void listModels().then(models => {
+      if (alive) setCatalog(Array.isArray(models) ? models : [])
+    }).catch(() => { if (alive) setCatalog([]) })
+    return () => { alive = false }
+  }, [listModels])
+
   if (config === null) {
     return (
       <div className={css.skeleton} aria-busy="true">
@@ -186,10 +198,10 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset }: {
 
   const num = (field: NumberKey): number | undefined => config[field]
   const bool = (field: BooleanKey): boolean => config[field] === true
-  const str = (field: 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey'): string | undefined => config[field]
+  const str = (field: 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey' | 'consolidateProvider' | 'consolidateModel'): string | undefined => config[field]
   const setNum = (field: NumberKey) => (next: number): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
   const setBool = (field: BooleanKey) => (next: boolean): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
-  const setStr = (field: 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey') => (next: string): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
+  const setStr = (field: 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey' | 'consolidateProvider' | 'consolidateModel') => (next: string): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
   const embeddingOn = config.embeddingProvider !== undefined && config.embeddingProvider !== 'off'
 
   return (
@@ -222,6 +234,46 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset }: {
         <SwitchRow label={t('cfgConsolidate')} hint={t('consolidateHint')} value={bool('consolidateEnabled')} disabled={busy} onChange={setBool('consolidateEnabled')} />
         <NumberRow label={t('cfgConsolidateMax')} field="consolidateMaxEntries" value={num('consolidateMaxEntries')} t={t} onCommit={setNum('consolidateMaxEntries')} />
         <NumberRow label={t('cfgConsolidateTimeout')} field="consolidateTimeoutMs" value={num('consolidateTimeoutMs')} t={t} onCommit={setNum('consolidateTimeoutMs')} />
+        {(() => {
+          const selectedProvider = config.consolidateProvider ?? ''
+          const selectedModel = config.consolidateModel ?? ''
+          const entry = catalog.find((item: ModelCatalogView) => item.provider === selectedProvider)
+          const providerMissing = selectedProvider !== '' && entry === undefined
+          const modelMissing = entry !== undefined && selectedModel !== '' && !entry.models.includes(selectedModel)
+          return (
+            <>
+              <Row label={t('cfgConsolidateProvider')} hint={t('cfgConsolidateProviderHint')}>
+                <select
+                  className={css.tagSelect}
+                  aria-label={t('cfgConsolidateProvider')}
+                  value={selectedProvider}
+                  disabled={busy}
+                  onChange={event => { onPatch({ consolidateProvider: event.currentTarget.value, consolidateModel: '' }) }}
+                >
+                  <option value="">{t('cfgConsolidateFollowDefault')}</option>
+                  {catalog.map((item: ModelCatalogView) => (
+                    <option key={item.provider} value={item.provider}>{item.providerName}</option>
+                  ))}
+                  {providerMissing && <option value={selectedProvider}>{selectedProvider}（未在目录中）</option>}
+                </select>
+              </Row>
+              <Row label={t('cfgConsolidateModel')}>
+                <select
+                  className={css.tagSelect}
+                  aria-label={t('cfgConsolidateModel')}
+                  value={selectedModel}
+                  disabled={busy || entry === undefined}
+                  onChange={event => { onPatch({ consolidateModel: event.currentTarget.value }) }}
+                >
+                  {entry === undefined
+                    ? <option value="">{t('cfgConsolidateSelectProviderFirst')}</option>
+                    : entry.models.map((model: string) => <option key={model} value={model}>{model}</option>)}
+                  {modelMissing && <option value={selectedModel}>{selectedModel}（未在目录中）</option>}
+                </select>
+              </Row>
+            </>
+          )
+        })()}
       </section>
 
       <section className={css.settingsGroup}>

@@ -45,11 +45,12 @@ dsh plugin --profile web remove dsh-triad
 | 语义检索 | 可选 embedding provider；关闭时退化为 TF-IDF 式打分 |
 | 自动注入 | 挂 `agent/pre-step`，`{ prepend: true }`，预算 `injectTokenBudget` |
 | 每日整合 | 衰减 + 命中加权 + 条目上限 |
+| 语义整理 | 增量小批（默认最近更新 20 条/次，对齐 ReMe auto_dream 策略）+ 整理前快照 + 变更流汇总记录 + 整理专用模型（面板下拉，可选） + `consolidate.log` 诊断 |
 
 工具：`memory_search` `memory_remember` `memory_pin` `memory_tag` `memory_forget`
 `memory_revise` `memory_retire` `memory_consolidate`
 
-路由：`/api/dsh-memory/*`
+路由：`/api/dsh-memory/*`（含 `/models` 模型目录）
 
 ### 用量
 

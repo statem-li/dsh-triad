@@ -64,9 +64,9 @@ export type MemoryKind = 'identity' | 'preference' | 'fact' | 'decision' | 'gotc
 export interface ChangeRecord {
   /** 变更记录自身 id（时间戳+随机）。 */
   id: string
-  /** add=新增；update=更新；promote=升长期；delete=删除；revise=软废弃+后继；retire=软废弃。 */
-  action: 'add' | 'update' | 'promote' | 'delete' | 'revise' | 'retire'
-  /** 关联记忆条目 id。 */
+  /** add=新增；update=更新；promote=升长期；delete=删除；revise=软废弃+后继；retire=软废弃；consolidate=整理汇总。 */
+  action: 'add' | 'update' | 'promote' | 'delete' | 'revise' | 'retire' | 'consolidate'
+  /** 关联记忆条目 id（consolidate 汇总记录为空串）。 */
   entryId: string
   scope: 'global' | 'project'
   projectHash: string | null
@@ -146,6 +146,14 @@ export interface MemoryConfig {
   consolidateMaxEntries: number
   /** 整理 LLM 调用超时（毫秒）。 */
   consolidateTimeoutMs: number
+  /**
+   * 整理专用模型 provider（留空=跟随默认模型 agentDefaultModel）。
+   * 背景：整理任务要求模型输出较长推理再给 JSON 决策，慢模型（如 vision 系）
+   * 20 条就要 4 分钟、200 条必超时；指定纯文本快模型可显著提速。
+   */
+  consolidateProvider?: string
+  /** 整理专用模型 id（与 consolidateProvider 成对；只填一个视为未配置）。 */
+  consolidateModel?: string
   /** 是否记录 API 请求日志（默认 false；防 api.log 被面板轮询请求灌满）。 */
   logApiRequests: boolean
   /** 注入检索 top-k（当前任务相关记忆注入条数；identity/pinned/长期常驻不占此预算）。 */
@@ -183,8 +191,13 @@ export const DEFAULT_CONFIG: MemoryConfig = {
   extractMaxChars: 6000,
   minImportance: 6,
   consolidateEnabled: true,
-  consolidateMaxEntries: 200,
-  consolidateTimeoutMs: 60_000,
+  // 增量演进模式：一次只整理「最近更新」的 20 条（对齐 ReMe auto_dream 的小撮
+  // 单元策略）。20 条约 3-5K 字符：慢模型实测 ~230s 可完成（<300s 超时），
+  // 快模型十几秒；不做全库 200 条大输入（4 万字符必超时）。
+  consolidateMaxEntries: 20,
+  // 300s：60s 默认对 200 条输入（3-4 万字符）远不够——实测 bai/vision 系
+  // 模型连 70 条都会 60s 超时，导致整理永远失败且被误报「无需整理」。
+  consolidateTimeoutMs: 300_000,
   logApiRequests: false,
   injectTopK: 8,
   entryLimit: 500,
@@ -221,6 +234,12 @@ export interface ConsolidateResult {
   promoted: number
   /** 整理产生的条目变动总数（merge 按源条目数 + 1 计）。 */
   changed: number
+  /**
+   * 本次整理未完成的原因（跳过/超时/LLM 异常等），undefined=正常结束
+   * （「无需整理」也属正常结束：LLM 判定 0 ops）。面板据此区分
+   * 「整理失败」与「记忆已是最佳状态」，不再把失败误报成无需整理。
+   */
+  failed?: string
 }
 
 /** 修订版本元数据（revisions/<id>.json）。 */
@@ -274,8 +293,13 @@ const CONFIG_BOOLEAN_KEYS = ['dailyCompileEnabled', 'consolidateEnabled', 'logAp
 /** 可调布尔字段名。 */
 export type ConfigBooleanKey = (typeof CONFIG_BOOLEAN_KEYS)[number]
 
-/** 可选字符串配置字段（embedding 连接信息，留空=未配置）。 */
-export type ConfigStringKey = 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey'
+/** 可选字符串配置字段（embedding 连接信息 / 整理模型，留空=未配置/跟随默认）。 */
+export type ConfigStringKey =
+  | 'embeddingBaseUrl'
+  | 'embeddingModel'
+  | 'embeddingApiKey'
+  | 'consolidateProvider'
+  | 'consolidateModel'
 
 /** 可调 embedding provider 值。 */
 export type EmbeddingProviderMode = MemoryConfig['embeddingProvider']

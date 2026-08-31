@@ -501,10 +501,10 @@ export class MemoryStore {
 
   /**
    * 追加一行日志（按分类落独立文件 + 大小轮转，防无界增长）。
-   * kind: extract=提取诊断 / api=API 请求（默认关闭）/ error=插件错误。
+   * kind: extract=提取诊断 / consolidate=整理诊断 / api=API 请求（默认关闭）/ error=插件错误。
    * 轮转：当前文件 ≥ 10MB 时改名成带时间戳归档，只保留最近 5 个归档。
    */
-  private async appendLog(kind: 'extract' | 'api' | 'error', line: string): Promise<void> {
+  private async appendLog(kind: 'extract' | 'consolidate' | 'api' | 'error', line: string): Promise<void> {
     const { appendFile, stat, rename, readdir, unlink } = await import('node:fs/promises')
     const logDir = join(this.root, 'log')
     const file = join(logDir, `${kind}.log`)
@@ -538,6 +538,15 @@ export class MemoryStore {
   /** 提取诊断日志（turn= 开始/结束/耗时/候选数，排查提取卡死）。 */
   async appendExtractLog(message: string): Promise<void> {
     await this.appendLog('extract', `[${nowIso()}] ${message}`)
+  }
+
+  /**
+   * 整理诊断日志：consolidate 引擎的每次「为什么没整理/整理成什么」都落盘。
+   * 引擎 debug 级日志不进 DSH 控制台（不落盘），此前 consolidate 静默
+   * skip/失败时磁盘上毫无痕迹，无法区分「无需整理」与「路由拿不到模型」。
+   */
+  async appendConsolidateLog(message: string): Promise<void> {
+    await this.appendLog('consolidate', `[${nowIso()}] ${message}`)
   }
 
   /** API 请求诊断日志（默认关闭；仅 config.logApiRequests 开启时由 api.ts 调用）。 */

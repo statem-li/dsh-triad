@@ -195,6 +195,36 @@ async function handle(
       return
     }
 
+    // ── 可用模型目录（整理模型下拉候选；registered + configurable 合并） ──
+    if (method === 'GET' && rest === '/models') {
+      const llm = ctx.get('llm') as
+        | {
+          listProviders?: () => Array<{ id: string; name?: string }>
+          listConfigurableProviders?: () => Array<{ provider: string; name?: string }>
+          listModels?: (provider: string) => Promise<Array<{ id: string }>>
+        }
+        | undefined
+      const empty: { models: Array<{ provider: string; providerName: string; models: string[] }> } = { models: [] }
+      if (llm === undefined) { json(res, 200, empty); return }
+      const byId = new Map<string, string>()
+      for (const provider of llm.listProviders?.() ?? []) byId.set(provider.id, provider.name ?? provider.id)
+      for (const provider of llm.listConfigurableProviders?.() ?? []) {
+        if (!byId.has(provider.provider)) byId.set(provider.provider, provider.name ?? provider.provider)
+      }
+      const models: Array<{ provider: string; providerName: string; models: string[] }> = []
+      for (const [provider, providerName] of byId) {
+        try {
+          const infos = await llm.listModels?.(provider)
+          const ids = (infos ?? []).map(info => info.id).filter(id => typeof id === 'string' && id !== '')
+          if (ids.length > 0) models.push({ provider, providerName, models: ids })
+        } catch {
+          // 单 provider 目录不可用（未配置凭据/NO_ADAPTER）时跳过，不阻断其余目录。
+        }
+      }
+      json(res, 200, { models })
+      return
+    }
+
     // ── 记忆注入开关（按会话） ────────────────────────────────────────
     if (method === 'GET' && rest === '/inject-state') {
       const sessionId = url.searchParams.get('sessionId') ?? ''

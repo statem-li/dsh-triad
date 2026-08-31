@@ -51,7 +51,7 @@ export interface ProjectView {
 /** 变更记录。 */
 export interface ChangeView {
   id: string
-  action: 'add' | 'update' | 'promote' | 'delete' | 'revise' | 'retire'
+  action: 'add' | 'update' | 'promote' | 'delete' | 'revise' | 'retire' | 'consolidate'
   entryId: string
   scope: 'global' | 'project'
   projectHash: string | null
@@ -104,6 +104,8 @@ export interface ConsolidateResultView {
   dropped: number
   promoted: number
   changed: number
+  /** 整理未完成的原因（超时/无模型等）；undefined=正常结束（含「无需整理」）。 */
+  failed?: string
 }
 
 /** 修订版本（host RevisionMeta 镜像）。 */
@@ -128,6 +130,10 @@ export interface MemoryConfigView {
   minImportance?: number
   consolidateMaxEntries?: number
   consolidateTimeoutMs?: number
+  /** 整理专用模型 provider（留空=跟随默认模型）。 */
+  consolidateProvider?: string
+  /** 整理专用模型 id（与 consolidateProvider 成对）。 */
+  consolidateModel?: string
   injectTopK?: number
   entryLimit?: number
   dailyCompileEnabled?: boolean
@@ -143,6 +149,13 @@ export interface MemoryConfigView {
 
 interface ApiError {
   error?: string
+}
+
+/** 模型目录项（某一 provider 及其可用模型 id 列表）。 */
+export interface ModelCatalogView {
+  provider: string
+  providerName: string
+  models: string[]
 }
 
 /** 记忆类型合法值（规范化用）。 */
@@ -254,6 +267,8 @@ export interface MemoryApi {
   setConfig: (patch: Partial<MemoryConfigView>) => Promise<{ ok: boolean; config: MemoryConfigView }>
   /** 恢复引擎默认配置（清空 config.json 覆盖层）。 */
   resetConfig: () => Promise<{ ok: boolean; config: MemoryConfigView }>
+  /** 可用模型目录（整理模型下拉候选）。 */
+  listModels: () => Promise<{ models: ModelCatalogView[] }>
   /** 修订记忆：软废弃旧条目 + 写入后继条目。 */
   revise: (entryId: string, input: { content: string; reason?: string; tags?: string[]; importance?: number }) => Promise<{ ok: boolean; deprecatedId: string; newId: string; entry: MemoryEntryView }>
   /** 软废弃记忆（数据保留，退出检索/注入）。 */
@@ -300,6 +315,7 @@ export function createMemoryApi(): MemoryApi {
     getConfig: () => getJson<{ config: MemoryConfigView }>('/config'),
     setConfig: (patch) => sendJson<{ ok: boolean; config: MemoryConfigView }>('/config', patch),
     resetConfig: () => sendJson<{ ok: boolean; config: MemoryConfigView }>('/config', { reset: true }),
+    listModels: () => getJson<{ models: ModelCatalogView[] }>('/models'),
     revise: (entryId, input) => sendJson<{ ok: boolean; deprecatedId: string; newId: string; entry: MemoryEntryView }>('/revise', { entryId, ...input }).then(withEntry) as Promise<{ ok: boolean; deprecatedId: string; newId: string; entry: MemoryEntryView }>,
     retire: (entryId, reason) => sendJson<{ ok: boolean; entry: MemoryEntryView }>('/retire', { entryId, reason }).then(withEntry),
     restore: (entryId) => sendJson<{ ok: boolean; entry: MemoryEntryView }>('/restore', { entryId }).then(withEntry),

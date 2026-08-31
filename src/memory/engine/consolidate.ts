@@ -50,6 +50,10 @@ interface ConsolidateStats {
 /**
  * 单个 scope 的整理：读 → 选集合 → LLM 决策 → 备份 → 应用 → 重编译。
  * @returns 统计结果；无变更/失败时 changed=0。
+ *
+ * 诊断：每个早退路径都会落盘一行到 log/consolidate.log（appendConsolidateLog）。
+ * 此前这些路径全部静默返回——「LLM 判定无需整理」与「拿不到模型路由」在
+ * 磁盘上完全无法区分，只能靠猜。日志为 fire-and-forget，绝不影响主流程。
  */
 export async function consolidateScope(
   ctx: Context,
@@ -60,7 +64,13 @@ export async function consolidateScope(
 ): Promise<ConsolidateResult> {
   const label = scopeLabel(scope)
   const empty: ConsolidateResult = { scope: label, merged: 0, rewritten: 0, dropped: 0, promoted: 0, changed: 0 }
-  if (!config.consolidateEnabled) return empty
+  const log = (message: string): void => {
+    void store.appendConsolidateLog(`[${trigger}] ${label}: ${message}`).catch(() => undefined)
+  }
+  if (!config.consolidateEnabled) {
+    log('skip (consolidate disabled in config)')
+    return empty
+  }
 
   const all = await store.readEntries()
   let owned = all.filter(entry => scope === 'global'
@@ -72,12 +82,31 @@ export async function consolidateScope(
   owned = owned.filter(entry => !entry.pinned && entry.disabled !== true && entry.deprecated !== true)
   owned = selectConsolidationSet(owned, config.consolidateMaxEntries)
   // 至少 2 条才有语义整理空间（单条重写/提升由规则层处理）。
-  if (owned.length < 2) return empty
+  if (owned.length < 2) {
+    log(`skip (owned=${owned.length} after pinned/disabled/deprecated filter, need >= 2)`)
+    return empty
+  }
 
   const llm = ctx.get('llm')
-  if (llm === undefined) return empty
-  const route = await resolveRoute(ctx, CONSOLIDATE_AGENT)
-  if (route === undefined) return empty
+  if (llm === undefined) {
+    log('skip (llm service not available on context)')
+    return { ...empty, failed: 'LLM 服务不可用' }
+  }
+  // 整理专用模型优先（config.consolidateProvider/Model 成对配置时）；
+  // 未配置则回退默认模型（agentDefaultModel）。
+  let route: { provider: string; model: string } | undefined
+  if (config.consolidateProvider !== undefined && config.consolidateModel !== undefined
+    && config.consolidateProvider !== '' && config.consolidateModel !== '') {
+    route = { provider: config.consolidateProvider, model: config.consolidateModel }
+    log(`use dedicated model ${route.provider}/${route.model}`)
+  } else {
+    route = await resolveRoute(ctx, CONSOLIDATE_AGENT)
+  }
+  if (route === undefined) {
+    log('skip (no LLM route: agentDefaultModel.currentSelection() returned empty; agent options are unset)')
+    return { ...empty, failed: '未配置默认模型（agentDefaultModel 无选择）' }
+  }
+  log(`start owned=${owned.length} route=${route.provider}/${route.model}`)
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.consolidateTimeoutMs)
@@ -98,13 +127,19 @@ export async function consolidateScope(
       assembler.push(chunk)
     }
     const finish = assembler.finish
-    if (finish.kind !== 'stop') return empty
+    if (finish.kind !== 'stop') {
+      log(`abort (finish=${finish.kind})`)
+      return { ...empty, failed: `模型输出异常中断（finish=${finish.kind}），可能是超时或输出截断` }
+    }
     const text = assembler.blocks()
       .filter(block => block.type === 'text' || block.type === 'reasoning')
       .map(block => (block as { text?: string }).text ?? '')
       .join(' ')
     const ops = parseConsolidateOutput(text)
-    if (ops.length === 0) return empty
+    if (ops.length === 0) {
+      log('noop (llm returned 0 valid ops)')
+      return empty
+    }
 
     // 整理前备份（回滚锚点）。
     await store.writeRevision({ entries: all, scope: label, trigger })
@@ -121,15 +156,27 @@ export async function consolidateScope(
 
     // 变更流（驱动面板「变更」tab 与 daily 日志）。
     for (const event of events) await store.appendChange(event)
+    // 整理汇总记录：变更 Tab 里一条「整理」徽标即可看到本次结果
+    //（合并/改写/废弃/提升数量 + 范围），无需逐条翻合并事件。
+    await store.appendChange({
+      action: 'consolidate',
+      entryId: '',
+      scope: scope === 'global' ? 'global' : 'project',
+      projectHash: scope === 'global' ? null : scope.projectHash,
+      summary: `整理完成：合并 ${stats.merged} / 改写 ${stats.rewritten} / 废弃 ${stats.dropped} / 提升 ${stats.promoted}`,
+    })
     await compileAll(store, config)
     await writeDailyLog(store)
 
     const changed = stats.merged + stats.rewritten + stats.dropped + stats.promoted
+    log(`done (merged=${stats.merged}, rewritten=${stats.rewritten}, dropped=${stats.dropped}, promoted=${stats.promoted}, changed=${changed})`)
     ctx.logger?.debug?.(`[dsh-memory] consolidate ${label} done (merged=${stats.merged}, rewritten=${stats.rewritten}, dropped=${stats.dropped}, promoted=${stats.promoted})`)
     return { scope: label, ...stats, changed }
   } catch (error) {
-    ctx.logger?.debug?.(`[dsh-memory] consolidate ${label} failed: ${error instanceof Error ? error.message : String(error)}`)
-    return empty
+    const message = error instanceof Error ? error.message : String(error)
+    log(`failed: ${message}`)
+    ctx.logger?.debug?.(`[dsh-memory] consolidate ${label} failed: ${message}`)
+    return { ...empty, failed: message }
   } finally {
     clearTimeout(timer)
   }
@@ -150,10 +197,10 @@ export async function consolidateAll(
   }
   const results: ConsolidateResult[] = []
   const globalResult = await consolidateScope(ctx, store, config, 'global', trigger)
-  if (globalResult.changed > 0) results.push(globalResult)
+  if (globalResult.changed > 0 || globalResult.failed !== undefined) results.push(globalResult)
   for (const hash of hashes) {
     const result = await consolidateScope(ctx, store, config, { projectHash: hash }, trigger)
-    if (result.changed > 0) results.push(result)
+    if (result.changed > 0 || result.failed !== undefined) results.push(result)
   }
   return results
 }
@@ -333,13 +380,15 @@ function applyOps(
   return { next, stats, events }
 }
 
-/** 选整理集合：短期优先，再按最近更新；截断到 max。 */
+/**
+ * 选整理集合：最近更新优先（增量演进模式，对齐 ReMe(原 MemoryScope) 的
+ * auto_dream —— 每天只处理最新变更的小撮单元，而不是全库重排）。
+ * 500 条旧条目不在一轮处理：每天只碰新进的 20 条，渐进消化；
+ * 旧条目的过期治理（衰减/折叠/滚出）由规则层 daily compile 负责。
+ */
 function selectConsolidationSet(entries: MemoryEntry[], max: number): MemoryEntry[] {
   return entries
-    .sort((a, b) => {
-      if (a.layer !== b.layer) return a.layer === 'short' ? -1 : 1
-      return b.updatedAt.localeCompare(a.updatedAt)
-    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, max)
 }
 

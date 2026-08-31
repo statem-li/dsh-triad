@@ -44,6 +44,7 @@ import type {
   MemoryKind,
   MemoryListResponse,
   MemorySummaryResponse,
+  ModelCatalogView,
   ProjectView,
   RevisionView,
 } from './api.js'
@@ -51,6 +52,7 @@ import { css, ensureStyles } from './styles.js'
 import { SettingsTab } from './SettingsTab.js'
 import { makeT, type MemoryLocaleKey, type MemoryT } from './locales.js'
 import { modalStaggerClass } from '../modal-animation.js'
+import { ConfirmDialog } from './ConfirmDialog.js'
 import { PshBody, PshHead, PopoverShell, type PopoverAnchor } from '../popover-shell.js'
 
 /** 面板 Tab。 */
@@ -542,50 +544,70 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     void run(() => apiRef.current.pin(entry.id, !entry.pinned))
   }
 
+  // ── 主题化确认弹窗（替代 window.confirm：原生对话框样式/标题均不可定制） ──
+  interface ConfirmRequest {
+    title: string
+    message: string
+    danger: boolean
+    onConfirm: () => void
+  }
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
+  /** 弹出确认；onConfirm 在用户点「确定」时执行（危险操作红钮）。 */
+  const askConfirm = (message: string, onConfirm: () => void, danger = false): void => {
+    setConfirmRequest({ title: t('confirmTitle'), message, danger, onConfirm })
+  }
+
   /** 启用/禁用单条记忆（禁用=保留但不参与注入与编译）。 */
   const handleEnable = (entry: MemoryEntryView): void => {
     void run(() => apiRef.current.enable(entry.id, entry.disabled))
   }
 
   const handleDelete = (entry: MemoryEntryView): void => {
-    if (!window.confirm(t('deleteConfirm'))) return
-    void run(() => apiRef.current.deleteEntry(entry.id))
+    askConfirm(t('deleteConfirm'), () => { void run(() => apiRef.current.deleteEntry(entry.id)) }, true)
   }
 
   /** 软废弃（retire）：数据保留，退出活跃生命周期。 */
   const handleRetire = (entry: MemoryEntryView): void => {
-    if (!window.confirm(t('retireConfirm'))) return
-    void run(() => apiRef.current.retire(entry.id))
+    askConfirm(t('retireConfirm'), () => { void run(() => apiRef.current.retire(entry.id)) })
   }
 
   /** 恢复已废弃条目（undo retire）。 */
   const handleRestore = (entry: MemoryEntryView): void => {
-    if (!window.confirm(t('restoreConfirm'))) return
-    void run(() => apiRef.current.restore(entry.id))
+    askConfirm(t('restoreConfirm'), () => { void run(() => apiRef.current.restore(entry.id)) })
   }
 
   /** 一键整理（Memory Dream）：当前筛选为某项目时只整理该项目，否则全量。 */
   const handleConsolidate = (): void => {
-    if (!window.confirm(t('consolidateConfirm'))) return
-    setConsolidating(true)
-    setError('')
-    void (async () => {
-      try {
-        const target: 'all' | 'global' | 'project' = scope === 'global'
-          ? 'global'
-          : scope.startsWith('project:') ? 'project' : 'all'
-        const hash = scope.startsWith('project:') ? scope.slice('project:'.length) : undefined
-        const response = await apiRef.current.consolidate(target, hash)
-        const changed = response.results.reduce((sum, result) => sum + result.changed, 0)
-        setNotice(changed > 0 ? t('consolidateDone', { n: changed }) : t('consolidateNoop'))
-      } catch (consolidateError) {
-        setError(consolidateError instanceof Error ? consolidateError.message : String(consolidateError))
-      } finally {
-        setConsolidating(false)
-        await refresh()
-        await loadRevisions()
-      }
-    })()
+    askConfirm(t('consolidateConfirm'), () => {
+      setConsolidating(true)
+      setError('')
+      void (async () => {
+        try {
+          const target: 'all' | 'global' | 'project' = scope === 'global'
+            ? 'global'
+            : scope.startsWith('project:') ? 'project' : 'all'
+          const hash = scope.startsWith('project:') ? scope.slice('project:'.length) : undefined
+          const response = await apiRef.current.consolidate(target, hash)
+          const changed = response.results.reduce((sum, result) => sum + result.changed, 0)
+          // 失败原因走 error 条（role=alert、持久可见），不再把失败误报成「无需整理」；
+          // 部分成功（如 global 完成、project 超时）时并存：error=失败原因，notice=完成数。
+          const failedResult = response.results.find(result => result.failed !== undefined)
+          if (failedResult !== undefined) {
+            setError(t('consolidateFailed', { reason: failedResult.failed ?? '' }))
+            setNotice(changed > 0 ? t('consolidateDone', { n: changed }) : '')
+          } else {
+            setError('')
+            setNotice(changed > 0 ? t('consolidateDone', { n: changed }) : t('consolidateNoop'))
+          }
+        } catch (consolidateError) {
+          setError(consolidateError instanceof Error ? consolidateError.message : String(consolidateError))
+        } finally {
+          setConsolidating(false)
+          await refresh()
+          await loadRevisions()
+        }
+      })()
+    })
   }
 
   // ── 多选删除 ─────────────────────────────────────────────────────────
@@ -610,21 +632,11 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     })
   }
 
-  /** 提交手动添加记忆。 */
-  const saveAdd = (): void => {
-    const content = addContent.trim()
-    if (content === '') return
-    if (addScope === 'project' && addProject === '') {
-      setError(t('selectProject'))
-      return
-    }
-    // 敏感内容风险提示：不阻断，确认后允许保存（用户自担风险）。
-    if (containsSensitive(content)) {
-      if (!window.confirm(t('sensitiveConfirm'))) return
-    }
+  /** 提交手动添加记忆（敏感内容确认后走同一入口）。 */
+  const commitAdd = (): void => {
     void run(async () => {
       const created = await apiRef.current.remember({
-        content,
+        content: addContent.trim(),
         scope: addScope,
         projectHash: addScope === 'project' ? addProject : undefined,
         tags: splitTags(addTags),
@@ -641,14 +653,32 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     })
   }
 
+  const saveAdd = (): void => {
+    const content = addContent.trim()
+    if (content === '') return
+    if (addScope === 'project' && addProject === '') {
+      setError(t('selectProject'))
+      return
+    }
+    // 敏感内容风险提示：不阻断，确认后允许保存（用户自担风险）。
+    if (containsSensitive(content)) {
+      askConfirm(t('sensitiveConfirm'), commitAdd, true)
+      return
+    }
+    commitAdd()
+  }
+
   /** 清空当前选中项目的全部记忆（仅项目层，全局层不动）。 */
   const handleClearProject = (): void => {
     if (!scope.startsWith('project:')) return
     const hash = scope.slice('project:'.length)
     const project = projects.find(candidate => candidate.hash === hash)
     const name = project?.alias ?? project?.path.split(/[\\/]/).filter(Boolean).at(-1) ?? hash
-    if (!window.confirm(t('clearProjectConfirm', { name, count: project?.entryCount ?? 0 }))) return
-    void run(() => apiRef.current.deleteProject(hash))
+    askConfirm(
+      t('clearProjectConfirm', { name, count: project?.entryCount ?? 0 }),
+      () => { void run(() => apiRef.current.deleteProject(hash)) },
+      true,
+    )
   }
 
   /** 保存项目别名（空串=清除别名，回退目录名）。 */
@@ -665,8 +695,11 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
 
   /** 回滚到某修订版本。 */
   const handleRollback = (revision: RevisionView): void => {
-    if (!window.confirm(t('rollbackConfirm', { id: revision.id, time: relativeTime(revision.at) }))) return
-    void run(() => apiRef.current.rollback(revision.id))
+    askConfirm(
+      t('rollbackConfirm', { id: revision.id, time: relativeTime(revision.at) }),
+      () => { void run(() => apiRef.current.rollback(revision.id)) },
+      true,
+    )
   }
 
   const startEdit = (entry: MemoryEntryView): void => {
@@ -788,13 +821,18 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
   const deleteChecked = (): void => {
     const ids = [...checkedIds]
     if (ids.length === 0) return
-    if (!window.confirm(t('deleteSelectedConfirm', { n: ids.length }))) return
     // 批量路由：一次事务删完再编译一次产物（此前是 N 次 /delete，
     // 每次都重编译一遍全部 md 产物）。
-    void run(async () => {
-      await apiRef.current.deleteBatch(ids)
-      exitSelecting()
-    })
+    askConfirm(
+      t('deleteSelectedConfirm', { n: ids.length }),
+      () => {
+        void run(async () => {
+          await apiRef.current.deleteBatch(ids)
+          exitSelecting()
+        })
+      },
+      true,
+    )
   }
 
   /** 左列一行条目。 */
@@ -1013,6 +1051,7 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
   )
 
   return (
+    <>
     <PopoverShell
       closing={closing}
       onClose={onClose}
@@ -1521,16 +1560,27 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
             config={config}
             busy={busy}
             t={t}
+            listModels={() => apiRef.current.listModels().then((response: { models: ModelCatalogView[] }) => response.models)}
             onPatch={patchValue => { void patchConfig(patchValue) }}
-            onReset={() => {
-              if (!window.confirm(t('settingsResetConfirm'))) return
-              void resetConfig()
-            }}
+            onReset={() => { askConfirm(t('settingsResetConfirm'), () => { void resetConfig() }) }}
           />
         )}
       </div>
       </PshBody>
     </PopoverShell>
+    {confirmRequest !== null && (
+      <ConfirmDialog
+        open
+        title={confirmRequest.title}
+        message={confirmRequest.message}
+        confirmLabel={t('confirmOk')}
+        cancelLabel={t('confirmCancel')}
+        danger={confirmRequest.danger}
+        onConfirm={confirmRequest.onConfirm}
+        onClose={() => { setConfirmRequest(null) }}
+      />
+    )}
+    </>
   )
 
   /** 渲染一条修订版本（快照信息 + 回滚按钮）。 */
@@ -1612,5 +1662,6 @@ export function changeActionLabel(action: ChangeView['action'], t: MemoryT): str
     case 'delete': return t('changeDelete')
     case 'revise': return t('changeRevise')
     case 'retire': return t('changeRetire')
+    case 'consolidate': return t('changeConsolidate')
   }
 }

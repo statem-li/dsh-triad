@@ -1,4 +1,5 @@
 node_modules/
+_tmp/
 *.log
 *.tsbuildinfo
 .DS_Store
