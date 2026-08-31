@@ -304,6 +304,11 @@ const css = {
   toolSelectWrap: 'skm-tool-select-wrap',
   toolSelect: 'skm-tool-select',
   toolSelectChevron: 'skm-tool-select-chevron',
+  dropWrap: 'skm-drop-wrap',
+  dropMenu: 'skm-drop-menu',
+  dropItem: 'skm-drop-item',
+  dropCheck: 'skm-drop-check',
+  dropBadge: 'skm-drop-badge',
   toolButton: 'skm-tool-button',
   toolbarSpacer: 'skm-toolbar-spacer',
   bulkWrap: 'skm-bulk-wrap',
@@ -314,6 +319,7 @@ const css = {
   presetPill: 'skm-preset-pill',
   presetSelect: 'skm-preset-select',
   presetPillChevron: 'skm-preset-pill-chevron',
+  presetPillLabel: 'skm-preset-pill-label',
   viewToggle: 'skm-view-toggle',
   viewBtn: 'skm-view-btn',
   hintRow: 'skm-hint-row',
@@ -493,10 +499,20 @@ const SHEET = `
 .skm-bulk-item:disabled{opacity:.5;cursor:default}
 .skm-bulk-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-border-l3,rgba(0,0,0,.2))}
 .skm-bulk-dot[data-on]{background:var(--dsw-alias-state-success-primary,#22c55e)}
-.skm-preset-pill{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;box-sizing:border-box;border:1px solid #c9d6f5;border-radius:10px;background:#eef3fd;color:#3b62d6;padding:0 10px;transition:border-color 140ms ease,background 140ms ease}
-.skm-preset-pill:hover{border-color:#acc4f0;background:#e4edfc}
+.skm-preset-pill{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;box-sizing:border-box;border:1px solid #c9d6f5;border-radius:10px;background:#eef3fd;color:#3b62d6;padding:0 10px;font-family:inherit;font-size:13px;line-height:18px;cursor:pointer;transition:border-color 140ms ease,background 140ms ease,transform 140ms ease}
+.skm-preset-pill:active{transform:scale(.97)}
+.skm-preset-pill-label{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .skm-preset-select{appearance:none;-webkit-appearance:none;border:none;outline:none;background:transparent;color:inherit;font-size:13px;line-height:18px;font-family:inherit;padding:0 18px 0 0;cursor:pointer;max-width:150px}
-.skm-preset-pill-chevron{position:absolute;right:8px;pointer-events:none;color:#6f8cd6}
+.skm-preset-pill-chevron{pointer-events:none;color:#6f8cd6;transition:transform 140ms ease}
+.skm-preset-pill[aria-expanded='true'] .skm-preset-pill-chevron{transform:rotate(180deg)}
+.skm-drop-wrap{position:relative;flex:none}
+.skm-drop-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:996;min-width:180px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 6px 20px rgba(16,24,40,.12);padding:4px;display:flex;flex-direction:column;gap:2px;animation:skm-form-in 140ms ease-out;max-height:320px;overflow-y:auto}
+.skm-drop-item{display:flex;align-items:center;gap:8px;border:none;border-radius:8px;padding:7px 10px;background:transparent;font-size:13px;line-height:18px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer;font-family:inherit;text-align:left;white-space:nowrap;transition:background 120ms ease,color 120ms ease}
+.skm-drop-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-drop-item[aria-checked='true']{color:var(--dsw-alias-label-primary,#0f1115);font-weight:600}
+.skm-drop-check{flex:none;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--dsw-alias-state-success-primary,#22c55e);opacity:0;transform:scale(.6);transition:opacity 140ms ease,transform 140ms ease}
+.skm-drop-check[data-on]{opacity:1;transform:scale(1)}
+.skm-drop-badge{margin-left:auto;flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#61666b);background:var(--dsw-alias-bg-module-platform,#f1f3f5);border-radius:999px;padding:0 8px}
 .skm-view-toggle{flex:none;display:inline-flex;align-items:center;gap:2px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-base,#fff);padding:3px;transition:border-color 140ms ease}
 .skm-view-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-caption,#adb2b8);cursor:pointer;transition:background 140ms ease,color 140ms ease,transform 140ms ease}
 .skm-view-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b)}
@@ -1066,6 +1082,8 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  /** 自定义下拉：来源筛选 / Agent 预设（哪个开着，null = 都关）。 */
+  const [openMenu, setOpenMenu] = useState<'source' | 'preset' | null>(null)
 
   const refresh = (): void => {
     // 技能目录变更后,同步失效 skill-source 的 slash 菜单快照缓存。
@@ -1566,19 +1584,38 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                 onChange={(event) => { setQuery(event.currentTarget.value) }}
               />
             </div>
-            <label className={css.toolSelectWrap}>
-              <span className={css.visuallyHidden}>{t('filterAll')}</span>
-              <select
-                className={css.toolSelect}
-                value={sourceFilter}
-                onChange={(event) => { setSourceFilter(event.currentTarget.value as 'all' | 'bundles' | 'loose') }}
+            <div className={css.dropWrap}>
+              <button
+                type="button"
+                className={css.toolButton}
+                aria-haspopup="menu"
+                aria-expanded={openMenu === 'source'}
+                onClick={() => { setOpenMenu((value) => value === 'source' ? null : 'source') }}
               >
-                <option value="all">{t('filterAll')}</option>
-                <option value="bundles">{t('filterBundles')}</option>
-                <option value="loose">{t('filterLoose')}</option>
-              </select>
-              <IconChevronDownOutline14 size={12} className={css.toolSelectChevron} aria-hidden="true" />
-            </label>
+                {sourceFilter === 'all' ? t('filterAll') : sourceFilter === 'bundles' ? t('filterBundles') : t('filterLoose')}
+                <IconChevronDownOutline14 size={12} aria-hidden="true" />
+              </button>
+              {openMenu === 'source' && (
+                <>
+                  <button type="button" className={css.bulkOverlay} aria-label={t('close')} onClick={() => { setOpenMenu(null) }} />
+                  <div className={css.dropMenu} role="menu">
+                    {([['all', t('filterAll')], ['bundles', t('filterBundles')], ['loose', t('filterLoose')]] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        role="menuitemradio"
+                        className={css.dropItem}
+                        aria-checked={sourceFilter === value}
+                        onClick={() => { setSourceFilter(value); setOpenMenu(null) }}
+                      >
+                        <span className={css.dropCheck} data-on={sourceFilter === value || undefined} aria-hidden="true">{sourceFilter === value ? '✓' : ''}</span>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button
               type="button"
               className={css.toolButton}
@@ -1623,21 +1660,60 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                 {t('newBundle')}
               </button>
             </Tooltip>
-            <label className={css.presetPill}>
-              <TagIcon />
-              <select
-                className={css.presetSelect}
-                value={activePreset}
-                aria-label={t('presetSelect')}
-                onChange={(event) => { setActivePreset(event.currentTarget.value) }}
+            <div className={css.dropWrap}>
+              <button
+                type="button"
+                className={css.presetPill}
+                aria-haspopup="menu"
+                aria-expanded={openMenu === 'preset'}
+                onClick={() => { setOpenMenu((value) => value === 'preset' ? null : 'preset') }}
               >
-                <option value={ALL_PRESETS}>{t('presetAllName')}</option>
-                {presets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>{preset.name ?? preset.id}</option>
-                ))}
-              </select>
-              <IconChevronDownOutline14 size={12} className={css.presetPillChevron} aria-hidden="true" />
-            </label>
+                <TagIcon />
+                <span className={css.presetPillLabel}>
+                  {activePreset === ALL_PRESETS
+                    ? t('presetAllName')
+                    : presets.find((preset) => preset.id === activePreset)?.name ?? activePreset}
+                </span>
+                <IconChevronDownOutline14 size={12} className={css.presetPillChevron} aria-hidden="true" />
+              </button>
+              {openMenu === 'preset' && (
+                <>
+                  <button type="button" className={css.bulkOverlay} aria-label={t('close')} onClick={() => { setOpenMenu(null) }} />
+                  <div className={css.dropMenu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      className={css.dropItem}
+                      aria-checked={activePreset === ALL_PRESETS}
+                      onClick={() => { setActivePreset(ALL_PRESETS); setOpenMenu(null) }}
+                    >
+                      <span className={css.dropCheck} data-on={activePreset === ALL_PRESETS || undefined} aria-hidden="true">{activePreset === ALL_PRESETS ? '✓' : ''}</span>
+                      {t('presetAllName')}
+                    </button>
+                    {presets.map((preset) => {
+                      const active = activePreset === preset.id
+                      const count = Object.values(overrides[preset.id] ?? {}).filter((state2) => state2 === false).length
+                      const label = preset.name ?? preset.id
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          role="menuitemradio"
+                          className={css.dropItem}
+                          aria-checked={active}
+                          title={[label, preset.id, preset.isDefault === true ? t('presetDefaultTag') : '', count > 0 ? t('presetOverrideCount', { n: count }) : ''].filter(Boolean).join(' · ')}
+                          onClick={() => { setActivePreset(preset.id); setOpenMenu(null) }}
+                        >
+                          <span className={css.dropCheck} data-on={active || undefined} aria-hidden="true">{active ? '✓' : ''}</span>
+                          {label}
+                          {count > 0 && <span className={css.dropBadge}>{count}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
             <div className={css.viewToggle} role="group" aria-label={t('viewGrid')}>
               <button
                 type="button"
