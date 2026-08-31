@@ -21,6 +21,7 @@ import { applyMemory } from './memory/index.js'
 // @ts-expect-error — vendored JS half (no type declarations shipped)
 import { apply as applyUsageHost } from '../vendor/usage-skill/index.js'
 import { apply as applySkillToggles } from './skill-toggles.js'
+import { applySkillHealth } from './skill-health.js'
 import type { MemoryConfig } from './memory/types.js'
 
 /** Stable Cordis plugin name. */
@@ -82,6 +83,17 @@ export async function apply(ctx: Context, config: TriadConfig = {}): Promise<voi
   } catch (error) {
     ctx.logger?.warn?.(
       `[dsh-triad] skill toggles failed to mount: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    )
+  }
+
+  // ── 技能目录健康检查（同步状态卡片）────────────────────────────
+  // GET /api/skill-health：只读扫描技能根目录 + bundle 账本，无写入。
+  try {
+    applySkillHealth(ctx)
+    ctx.logger?.info?.('[dsh-triad] skill health mounted')
+  } catch (error) {
+    ctx.logger?.warn?.(
+      `[dsh-triad] skill health failed to mount: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     )
   }
 }

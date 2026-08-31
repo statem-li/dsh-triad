@@ -78,6 +78,7 @@ const SKILL_ZH: Record<string, string> = {
   hubSubtitle: 'Skill 同步工作区', hubWorkspace: '工作区', hubManage: '管理',
   hubMySkills: '我的技能', hubAddSkills: '添加技能', hubBundles: '技能包', hubPresets: 'Agent 预设', hubLoose: '散装技能',
   statManaged: '管理的技能', statEnabled: '全局启用', statLoose: '散装技能', statSync: '同步状态', statHealthy: '全部健康',
+  statChecking: '检测中…', statIssues: '{n} 个问题', statUnknown: '检测失败', statPending: '待检测',
   searchPlaceholder: '搜索技能…', filterAll: '全部', filterBundles: '技能包', filterLoose: '散装技能', sortLabel: '名称',
   bulk: '批量', bulkEnableAll: '全部启用', bulkDisableAll: '全部禁用', presetSelect: 'Agent 预设', viewList: '列表', viewGrid: '网格',
   bannerTitle: '添加技能', bannerSub: '拖入技能文件夹安装，或点击浏览选择',
@@ -107,6 +108,28 @@ async function skillRequest<T>(path: string, options?: RequestInit): Promise<T> 
 type InstallInput =
   | { archive: string; description: string; bundleId?: string }
   | { skillName: string; description: string; bundleId?: string; files: Array<{ path: string; data: string }> }
+
+/** 技能目录健康检查（/api/skill-health 响应，host 只读扫描）。 */
+interface HealthIssue {
+  level: 'error' | 'warn'
+  code: string
+  skill?: string
+  bundle?: string
+  message: string
+}
+
+interface HealthReport {
+  ok: boolean
+  healthy: number
+  issues: HealthIssue[]
+}
+
+/** 同步状态卡的展示态。 */
+type HealthView =
+  | { state: 'loading' }
+  | { state: 'ok'; report: HealthReport }
+  | { state: 'issue'; report: HealthReport }
+  | { state: 'unavailable' }
 
 /** 技能开关状态(/api/skill-toggles/status 响应)。 */
 interface ToggleStatus {
@@ -213,6 +236,16 @@ const skillApi = {
     skillRequest(`/skills/${encodeURIComponent(name)}`, { method: 'DELETE', headers: { accept: 'application/json' } }),
   installSkill: (input: InstallInput): Promise<Record<string, never>> =>
     skillRequest('/skills', { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(input) }),
+  /** 技能目录健康检查：只读扫描（缺 SKILL.md / frontmatter 无效 / 名称不一致 / 账本悬挂引用）。 */
+  health: (): Promise<HealthReport> =>
+    fetch('/api/skill-health', { headers: { accept: 'application/json' } })
+      .then((response) => response.json() as Promise<HealthReport & { error?: string }>)
+      .then((body) => {
+        if (typeof body !== 'object' || body === null || !Array.isArray(body.issues)) {
+          throw new Error('health unavailable')
+        }
+        return body as HealthReport
+      }),
 }
 
 /** ---------------------------------------------------------------- 样式 */
@@ -346,6 +379,9 @@ const css = {
   assignCardName: 'skm-assign-card-name',
   assignCardDesc: 'skm-assign-card-desc',
   assignGo: 'skm-assign-go',
+  // 同步状态健康检查
+  healthNotice: 'skm-health-notice',
+  healthNoticeTitle: 'skm-health-notice-title',
   skillFiles: 'skm-skill-files',
   skillFile: 'skm-skill-file',
   skillPreview: 'skm-skill-preview',
@@ -486,6 +522,14 @@ const SHEET = `
 .skm-stat-value{font-size:26px;font-weight:700;line-height:32px;color:var(--dsw-alias-label-primary,#0f1115);font-variant-numeric:tabular-nums}
 .skm-stat-value-inline{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;line-height:22px}
 .skm-stat-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-state-success-primary,#22c55e);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-success-primary,#22c55e) 18%,transparent)}
+.skm-stat-dot[data-tone='warn']{background:var(--dsw-alias-state-warn-primary,#e8a33d);box-shadow:0 0 0 3px rgba(232,163,61,.18)}
+.skm-stat-dot[data-tone='pending']{background:var(--dsw-alias-border-l3,rgba(0,0,0,.2));box-shadow:0 0 0 3px rgba(0,0,0,.05)}
+.skm-stat-value[data-tone='warn']{color:#b45309}
+.skm-stat-value[data-tone='pending']{color:var(--dsw-alias-label-tertiary,#81858c)}
+.skm-health-notice{flex:none;margin:8px 16px 0;box-sizing:border-box;border:1px solid #f0cf9e;border-radius:10px;background:#fdf6e3;padding:8px 12px;display:flex;flex-direction:column;gap:4px;animation:skm-form-in 180ms ease-out}
+.skm-health-notice-title{font-size:12px;font-weight:700;line-height:17px;color:#b45309}
+.skm-health-notice ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.skm-health-notice li{font-size:12px;line-height:17px;color:#8a5a17}
 .skm-toolbar{flex:none;display:flex;align-items:center;gap:8px;padding:12px 16px 4px;flex-wrap:wrap}
 .skm-search-box{flex:1;min-width:170px;display:flex;align-items:center;gap:8px;height:36px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-base,#fff);padding:0 12px;color:var(--dsw-alias-label-caption,#adb2b8);transition:border-color 140ms ease,box-shadow 140ms ease}
 .skm-search-box:focus-within{border-color:var(--dsw-alias-state-business-primary,#4176e6);box-shadow:0 0 0 3px rgba(65,118,230,.14)}
@@ -1143,6 +1187,8 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   /** 自定义下拉：来源筛选 / Agent 预设（哪个开着，null = 都关）。 */
   const [openMenu, setOpenMenu] = useState<'source' | 'preset' | null>(null)
+  /** 同步状态：/api/skill-health 只读扫描结果（缺 SKILL.md 等）。 */
+  const [health, setHealth] = useState<HealthView>({ state: 'loading' })
 
   const refresh = (): void => {
     // 技能目录变更后,同步失效 skill-source 的 slash 菜单快照缓存。
@@ -1193,6 +1239,12 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
           () => { /* 开关接口也不可用时保持空状态（开关仍可操作,失败会提示）。 */ },
         )
       },
+    )
+    // 同步状态：只读健康扫描（目录完整性 + 账本悬挂引用）。
+    setHealth({ state: 'loading' })
+    void skillApi.health().then(
+      (report) => { if (current) setHealth(report.ok ? { state: 'ok', report } : { state: 'issue', report }) },
+      () => { if (current) setHealth({ state: 'unavailable' }) },
     )
     return () => { current = false }
     // reload 拆分为变化键；open 恒 true（本组件在打开时才渲染）
@@ -1500,6 +1552,14 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const totalSkills = bundles.reduce((n, bundle) => n + bundle.skillCount, 0) + loose.length
   const bundleCount = bundles.length
   const presetCount = presets.length
+  /** 同步状态卡展示模型：ok=绿点全健康；issue=橙点带数量；unavailable=灰点待检测（旧 host 未加载新路由）；loading=检测中。 */
+  const healthView = health.state === 'ok'
+    ? { tone: 'ok', label: t('statHealthy'), title: t('statHealthy') }
+    : health.state === 'issue'
+      ? { tone: 'warn', label: t('statIssues', { n: health.report.issues.length }), title: health.report.issues.map((issue) => issue.message).join('\n') }
+      : health.state === 'unavailable'
+        ? { tone: 'pending', label: t('statPending'), title: t('statPending') }
+        : { tone: 'idle', label: t('statChecking'), title: '' }
   const enabledCount = (() => {
     let n = 0
     for (const bundle of bundles) for (const skill of bundle.skills) if (toggles.skills[skill.name] !== false) n += 1
@@ -1627,9 +1687,28 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
             <div className={css.stat}><span className={css.statLabel}>{t('statLoose')}</span><span className={css.statValue}>{loose.length}</span></div>
             <div className={css.stat}>
               <span className={css.statLabel}>{t('statSync')}</span>
-              <span className={`${css.statValue} ${css.statValueInline}`}><i className={css.statDot} aria-hidden="true" />{t('statHealthy')}</span>
+              <span
+                className={`${css.statValue} ${css.statValueInline}`}
+                data-tone={healthView.tone === 'warn' ? 'warn' : healthView.tone === 'pending' ? 'pending' : undefined}
+                title={healthView.title === '' ? undefined : healthView.title}
+              >
+                <i className={css.statDot} data-tone={healthView.tone === 'warn' ? 'warn' : healthView.tone === 'pending' ? 'pending' : undefined} aria-hidden="true" />
+                {healthView.label}
+              </span>
             </div>
           </div>
+
+          {/* 同步问题明细：只读健康扫描发现 error 级问题时展示，悬停统计卡同看 */}
+          {health.state === 'issue' && (
+            <div className={css.healthNotice} role="status">
+              <span className={css.healthNoticeTitle}>{t('statIssues', { n: health.report.issues.length })}</span>
+              <ul>
+                {health.report.issues.slice(0, 4).map((issue, index) => (
+                  <li key={`${issue.code}-${String(index)}`}>{issue.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Agent 预设分类：圆形球条（首个是「全部 Agent」= 全局层） */}
           <div className={css.presetStrip} role="group" aria-label={t('presetStripLabel')}>
