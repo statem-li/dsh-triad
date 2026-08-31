@@ -1551,7 +1551,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const visibleLoose = sourceFilter === 'bundles' ? [] : sortedSkills(loose.filter(qMatch))
   const totalSkills = bundles.reduce((n, bundle) => n + bundle.skillCount, 0) + loose.length
   const bundleCount = bundles.length
-  const presetCount = presets.length
   /** 同步状态卡展示模型：ok=绿点全健康；issue=橙点带数量；unavailable=灰点待检测（旧 host 未加载新路由）；loading=检测中。 */
   const healthView = health.state === 'ok'
     ? { tone: 'ok', label: t('statHealthy'), title: t('statHealthy') }
@@ -1655,16 +1654,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
             <span className={css.hubItemIcon}><IconFolderOpenOutline16 size={14} /></span>
             <span className={css.hubItemLabel}>{t('hubBundles')}</span>
             <span className={css.hubItemCount}>{bundleCount}</span>
-          </button>
-          <button
-            type="button"
-            className={`${css.hubItem} ${activePreset !== ALL_PRESETS ? css.hubItemActive : ''}`}
-            data-active={activePreset !== ALL_PRESETS || undefined}
-            onClick={() => { setSourceFilter('all') }}
-          >
-            <span className={css.hubItemIcon}><TagIcon /></span>
-            <span className={css.hubItemLabel}>{t('hubPresets')}</span>
-            <span className={css.hubItemCount}>{presetCount}</span>
           </button>
           <button
             type="button"
