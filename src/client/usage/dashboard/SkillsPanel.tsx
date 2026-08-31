@@ -75,7 +75,7 @@ const SKILL_ZH: Record<string, string> = {
   // 卡片（Skills Hub 风格）文案
   copySkillName: '复制技能名', copiedSkillName: '已复制', toolsLabel: '工具', scopeAll: '全局', tagLoose: '散装',
   // Skills Hub 页面文案
-  hubSubtitle: 'Skill 同步工作区', hubWorkspace: '工作区', hubManage: '管理',
+  hubSubtitle: 'Skill 管理工作区', hubWorkspace: '工作区', hubManage: '管理',
   hubMySkills: '我的技能', hubAddSkills: '添加技能', hubBundles: '技能包', hubPresets: 'Agent 预设', hubLoose: '散装技能',
   statManaged: '管理的技能', statEnabled: '全局启用', statLoose: '散装技能', statSync: '技能健康', statHealthy: '全部健康',
   statChecking: '检测中…', statIssues: '{n} 个问题', statUnknown: '检测失败', statPending: '待检测',
