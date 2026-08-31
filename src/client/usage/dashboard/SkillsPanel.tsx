@@ -498,8 +498,7 @@ const SHEET = `
 .skm-hub{flex:1 1 auto;min-height:0;display:flex;min-width:0;background:var(--dsw-alias-bg-base,#fff)}
 .skm-hub-side{flex:none;width:208px;box-sizing:border-box;padding:14px 10px 16px;border-right:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06));background:var(--dsw-alias-bg-module-platform,#fafbfc);overflow-y:auto;display:flex;flex-direction:column;gap:2px}
 .skm-hub-brand{display:flex;align-items:center;gap:10px;padding:2px 8px 12px}
-.skm-hub-logo{flex:none;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;color:#fff;background:linear-gradient(135deg,#4a7df0,#2f5fd7);box-shadow:0 2px 6px rgba(47,95,215,.35);transition:transform 160ms ease}
-.skm-hub-brand:hover .skm-hub-logo{transform:rotate(-6deg) scale(1.05)}
+.skm-hub-logo{flex:none;display:inline-flex;align-items:center;justify-content:center;height:36px;color:var(--dsw-alias-label-primary,#0f1115)}
 .skm-hub-brand-text{min-width:0;display:flex;flex-direction:column}
 .skm-hub-brand-title{font-size:15px;font-weight:700;line-height:20px;color:var(--dsw-alias-label-primary,#0f1115)}
 .skm-hub-brand-sub{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary,#81858c)}
@@ -973,11 +972,20 @@ function BulbIcon(): JSX.Element {
   )
 }
 
-function HubLogoIcon(): JSX.Element {
+/** 品牌字标：侧栏 Logo 区加粗「skill」文字 SVG（无底色，currentColor = 品牌蓝）。 */
+function HubWordmarkIcon(): JSX.Element {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 1.5l9 5.2v10.6l-9 5.2-9-5.2V6.7l9-5.2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="M8.5 9.5l7-3.8M8.5 9.5v2.4c0 .8.6 1.4 1.4 1.4h4.2c.8 0 1.4.6 1.4 1.4v2.6l-7 3.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <svg width="26" height="12" viewBox="0 0 26 12" aria-hidden="true">
+      <text
+        x="13"
+        y="10"
+        textAnchor="middle"
+        fontSize="10.5"
+        fontWeight="800"
+        letterSpacing="-0.15"
+        fontFamily="ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"
+        fill="currentColor"
+      >skill</text>
     </svg>
   )
 }
@@ -1641,7 +1649,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
         {/* ── 左侧栏：品牌 + 工作区/管理导航 ── */}
         <aside className={css.hubSide}>
           <div className={css.hubBrand}>
-            <span className={css.hubLogo}><HubLogoIcon /></span>
+            <span className={css.hubLogo}><HubWordmarkIcon /></span>
             <span className={css.hubBrandText}>
               <span className={css.hubBrandTitle}>{t('panelTitle')}</span>
               <span className={css.hubBrandSub}>{t('hubSubtitle')}</span>
