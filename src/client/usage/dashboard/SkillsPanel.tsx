@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
-  Button, IconAgentPresetOutline16, IconChevronDownOutline14, IconCloseOutline16, IconEditOutline16,
+  Button, IconChevronDownOutline14, IconCloseOutline16, IconEditOutline16,
   IconFolderOpenOutline16, IconPlusOutline16, IconRefreshOutline14, IconSkillOutline16, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { modalStaggerClass } from '../../modal-animation'
@@ -74,6 +74,15 @@ const SKILL_ZH: Record<string, string> = {
   presetLockedByGlobal: '「全部 Agent」层已禁用，预设层无法打开',
   // 卡片（Skills Hub 风格）文案
   copySkillName: '复制技能名', copiedSkillName: '已复制', toolsLabel: '工具', scopeAll: '全局', tagLoose: '散装',
+  // Skills Hub 页面文案
+  hubSubtitle: 'Skill 同步工作区', hubWorkspace: '工作区', hubManage: '管理',
+  hubMySkills: '我的技能', hubAddSkills: '添加技能', hubBundles: '技能包', hubPresets: 'Agent 预设', hubLoose: '散装技能',
+  statManaged: '管理的技能', statEnabled: '全局启用', statLoose: '散装技能', statSync: '同步状态', statHealthy: '全部健康',
+  searchPlaceholder: '搜索技能…', filterAll: '全部', filterBundles: '技能包', filterLoose: '散装技能', sortLabel: '名称',
+  bulk: '批量', bulkEnableAll: '全部启用', bulkDisableAll: '全部禁用', presetSelect: 'Agent 预设', viewList: '列表', viewGrid: '网格',
+  bannerTitle: '添加技能', bannerSub: '拖入技能文件夹安装，或点击浏览选择',
+  bannerDiscovered: '发现待导入技能', bannerFound: '发现 {n} 个文件（{folder}）待导入', bannerBtnBrowse: '浏览并导入', bannerBtnReview: '审查并导入',
+  noMatch: '没有符合筛选条件的技能',
 }
 
 function skillT(key: string, params?: Record<string, string | number>): string {
@@ -268,6 +277,59 @@ const css = {
   skillFootLabel: 'skm-skill-foot-label',
   skillFootIcon: 'skm-skill-foot-icon',
   skillCardActions: 'skm-skill-card-actions',
+  // Skills Hub 页面结构
+  hub: 'skm-hub',
+  hubSide: 'skm-hub-side',
+  hubBrand: 'skm-hub-brand',
+  hubLogo: 'skm-hub-logo',
+  hubBrandText: 'skm-hub-brand-text',
+  hubBrandTitle: 'skm-hub-brand-title',
+  hubBrandSub: 'skm-hub-brand-sub',
+  hubGroup: 'skm-hub-group',
+  hubItem: 'skm-hub-item',
+  hubItemActive: 'skm-hub-item-active',
+  hubItemIcon: 'skm-hub-item-icon',
+  hubItemLabel: 'skm-hub-item-label',
+  hubItemCount: 'skm-hub-item-count',
+  hubMain: 'skm-hub-main',
+  statsRow: 'skm-stats-row',
+  stat: 'skm-stat',
+  statLabel: 'skm-stat-label',
+  statValue: 'skm-stat-value',
+  statValueInline: 'skm-stat-value-inline',
+  statDot: 'skm-stat-dot',
+  toolbar: 'skm-toolbar',
+  searchBox: 'skm-search-box',
+  searchInput: 'skm-search-input',
+  toolSelectWrap: 'skm-tool-select-wrap',
+  toolSelect: 'skm-tool-select',
+  toolSelectChevron: 'skm-tool-select-chevron',
+  toolButton: 'skm-tool-button',
+  toolbarSpacer: 'skm-toolbar-spacer',
+  bulkWrap: 'skm-bulk-wrap',
+  bulkOverlay: 'skm-bulk-overlay',
+  bulkMenu: 'skm-bulk-menu',
+  bulkItem: 'skm-bulk-item',
+  bulkDot: 'skm-bulk-dot',
+  presetPill: 'skm-preset-pill',
+  presetSelect: 'skm-preset-select',
+  presetPillChevron: 'skm-preset-pill-chevron',
+  viewToggle: 'skm-view-toggle',
+  viewBtn: 'skm-view-btn',
+  hintRow: 'skm-hint-row',
+  hintRowText: 'skm-hint-row-text',
+  banner: 'skm-banner',
+  bannerActive: 'skm-banner-active',
+  bannerIcon: 'skm-banner-icon',
+  bannerText: 'skm-banner-text',
+  bannerTitle: 'skm-banner-title',
+  bannerSub: 'skm-banner-sub',
+  bannerBtn: 'skm-banner-btn',
+  mainScroll: 'skm-main-scroll',
+  hubSection: 'skm-hub-section',
+  hubSectionHead: 'skm-hub-section-head',
+  skillGridList: 'skm-skill-grid-list',
+  noResult: 'skm-no-result',
   skillFiles: 'skm-skill-files',
   skillFile: 'skm-skill-file',
   skillPreview: 'skm-skill-preview',
@@ -336,19 +398,20 @@ const SHEET = `
 .skm-bundle-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .skm-bundle{display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));border-radius:14px;overflow:hidden;background:var(--dsw-alias-bg-base,#fff);box-shadow:0 1px 2px rgba(16,24,40,.03);transition:border-color 160ms ease,box-shadow 160ms ease}
 .skm-bundle:hover{border-color:var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
-.skm-bundle-row{flex:1;min-width:0;display:inline-flex;align-items:center;gap:8px;appearance:none;border:none;background:transparent;padding:10px 10px 10px 4px;font-size:13px;cursor:pointer;color:var(--dsw-alias-label-primary,#0f1115);font-family:inherit}
+.skm-bundle-row{flex:1;min-width:0;display:inline-flex;align-items:center;gap:8px;appearance:none;border:none;background:transparent;padding:6px 2px;font-size:15px;cursor:pointer;color:var(--dsw-alias-label-primary,#0f1115);font-family:inherit;border-radius:8px;transition:background 140ms ease}
 .skm-bundle-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.03))}
-.skm-bundle-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.skm-bundle-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;display:inline-flex;align-items:center;gap:6px}
 .skm-bundle-count{flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#61666b);background:var(--dsw-alias-bg-module-platform,#f1f3f5);border-radius:999px;padding:0 8px;white-space:nowrap}
 .skm-chevron{flex:none;margin-left:auto;color:var(--dsw-alias-label-tertiary,#888);transition:transform 120ms}
 .skm-bundle[data-open='true'] .skm-chevron{transform:rotate(180deg)}
-.skm-bundle-actions{margin-left:auto;display:flex;align-items:center;gap:2px;padding-right:6px}
+.skm-bundle-actions{margin-left:auto;display:flex;align-items:center;gap:2px;padding-right:2px}
 .skm-icon-action{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:50%;padding:0;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary,#888);transition:background 140ms ease,color 140ms ease,transform 140ms ease}
 .skm-icon-action:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05));color:var(--dsw-alias-label-primary,#0f1115)}
 .skm-icon-action:active{transform:scale(.9)}
 
-/* ── 技能卡片（Skills Hub 风格）：单列大卡片，宽约 660px、高约 2 倍于紧凑行 ── */
-.skm-skill-grid{list-style:none;margin:0;padding:2px 12px 12px;width:100%;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;box-sizing:border-box}
+/* ── 技能卡片（Skills Hub 风格）：双列网格；列表视图切单列宽卡 ── */
+.skm-skill-grid{list-style:none;margin:8px 0 0;padding:0;width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;box-sizing:border-box}
+.skm-skill-grid-list{grid-template-columns:minmax(0,1fr)}
 .skm-skill-grid > .skm-status{grid-column:1/-1;padding-top:4px}
 .skm-skill-card{position:relative;min-width:0;display:flex;flex-direction:column;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:16px;background:var(--dsw-alias-bg-base,#fff);padding:14px 16px 0;overflow:hidden;opacity:0;animation:skm-card-in 260ms cubic-bezier(.2,.7,.3,1.06) forwards;animation-delay:calc(var(--skm-i,0)*40ms);transition:border-color 160ms ease,box-shadow 160ms ease,transform 160ms ease}
 .skm-skill-card:hover{border-color:var(--dsw-alias-border-l3,rgba(0,0,0,.16));box-shadow:0 3px 14px rgba(16,24,40,.08);transform:translateY(-1px)}
@@ -378,6 +441,84 @@ const SHEET = `
 .skm-skill-foot-icon:disabled{opacity:.38;cursor:default}
 .skm-skill-foot-icon:disabled:hover{background:transparent;color:var(--dsw-alias-label-secondary,#61666b);transform:none}
 .skm-skill-card-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
+
+/* ── Skills Hub 页面骨架：侧栏 / 统计行 / 工具栏 / 横幅 / 分区 ── */
+.skm-hub{flex:1 1 auto;min-height:0;display:flex;min-width:0;background:var(--dsw-alias-bg-base,#fff)}
+.skm-hub-side{flex:none;width:208px;box-sizing:border-box;padding:14px 10px 16px;border-right:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06));background:var(--dsw-alias-bg-module-platform,#fafbfc);overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.skm-hub-brand{display:flex;align-items:center;gap:10px;padding:2px 8px 12px}
+.skm-hub-logo{flex:none;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;color:#fff;background:linear-gradient(135deg,#4a7df0,#2f5fd7);box-shadow:0 2px 6px rgba(47,95,215,.35);transition:transform 160ms ease}
+.skm-hub-brand:hover .skm-hub-logo{transform:rotate(-6deg) scale(1.05)}
+.skm-hub-brand-text{min-width:0;display:flex;flex-direction:column}
+.skm-hub-brand-title{font-size:15px;font-weight:700;line-height:20px;color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-hub-brand-sub{font-size:11px;line-height:15px;color:var(--dsw-alias-label-tertiary,#81858c)}
+.skm-hub-group{margin:10px 8px 4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption,#adb2b8)}
+.skm-hub-item{flex:none;display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:12px;padding:8px 10px;background:transparent;cursor:pointer;font-family:inherit;color:var(--dsw-alias-label-secondary,#61666b);transition:background 140ms ease,border-color 140ms ease,color 140ms ease,box-shadow 140ms ease}
+.skm-hub-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.03));color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-hub-item[data-active]{border-color:var(--dsw-alias-border-l2,rgba(0,0,0,.1));background:var(--dsw-alias-bg-base,#fff);box-shadow:0 1px 3px rgba(16,24,40,.05);color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-hub-item-icon{flex:none;display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center;color:var(--dsw-alias-label-caption,#adb2b8);transition:color 140ms ease}
+.skm-hub-item[data-active] .skm-hub-item-icon,.skm-hub-item:hover .skm-hub-item-icon{color:var(--dsw-alias-label-secondary,#61666b)}
+.skm-hub-item-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:13px;line-height:18px}
+.skm-hub-item-count{flex:none;font-size:12px;line-height:16px;color:var(--dsw-alias-label-caption,#adb2b8)}
+.skm-hub-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.skm-stats-row{flex:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 16px 0}
+.skm-stat{min-width:0;display:flex;flex-direction:column;gap:6px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:14px;background:var(--dsw-alias-bg-base,#fff);padding:10px 14px;box-shadow:0 1px 2px rgba(16,24,40,.03);opacity:0;animation:skm-card-in 260ms cubic-bezier(.2,.7,.3,1.06) forwards}
+.skm-stat:nth-child(1){animation-delay:20ms}
+.skm-stat:nth-child(2){animation-delay:70ms}
+.skm-stat:nth-child(3){animation-delay:120ms}
+.skm-stat:nth-child(4){animation-delay:170ms}
+.skm-stat-label{font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary,#61666b)}
+.skm-stat-value{font-size:26px;font-weight:700;line-height:32px;color:var(--dsw-alias-label-primary,#0f1115);font-variant-numeric:tabular-nums}
+.skm-stat-value-inline{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;line-height:22px}
+.skm-stat-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-state-success-primary,#22c55e);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-success-primary,#22c55e) 18%,transparent)}
+.skm-toolbar{flex:none;display:flex;align-items:center;gap:8px;padding:12px 16px 4px;flex-wrap:wrap}
+.skm-search-box{flex:1;min-width:170px;display:flex;align-items:center;gap:8px;height:36px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-base,#fff);padding:0 12px;color:var(--dsw-alias-label-caption,#adb2b8);transition:border-color 140ms ease,box-shadow 140ms ease}
+.skm-search-box:focus-within{border-color:var(--dsw-alias-state-business-primary,#4176e6);box-shadow:0 0 0 3px rgba(65,118,230,.14)}
+.skm-search-input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:13px;line-height:18px;color:var(--dsw-alias-label-primary,#0f1115);font-family:inherit}
+.skm-search-input::placeholder{color:var(--dsw-alias-label-caption,#adb2b8)}
+.skm-tool-select-wrap{position:relative;flex:none;display:inline-flex;align-items:center}
+.skm-tool-select{appearance:none;-webkit-appearance:none;height:36px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-secondary,#61666b);font-size:13px;line-height:18px;font-family:inherit;padding:0 26px 0 12px;cursor:pointer;transition:border-color 140ms ease,background 140ms ease}
+.skm-tool-select:hover{border-color:var(--dsw-alias-border-l3,rgba(0,0,0,.18))}
+.skm-tool-select:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary,#4176e6)}
+.skm-tool-select-chevron{position:absolute;right:9px;pointer-events:none;color:var(--dsw-alias-label-caption,#adb2b8)}
+.skm-tool-button{flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-secondary,#61666b);font-size:13px;line-height:18px;font-family:inherit;padding:0 12px;cursor:pointer;transition:border-color 140ms ease,background 140ms ease,color 140ms ease,transform 140ms ease}
+.skm-tool-button:hover{background:var(--dsw-alias-interactive-bg-hover-solid,#f7f8f9);color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-tool-button:active{transform:scale(.97)}
+.skm-tool-button:disabled{opacity:.5;cursor:default}
+.skm-toolbar-spacer{flex:1 1 12px}
+.skm-bulk-wrap{position:relative;flex:none}
+.skm-bulk-overlay{position:fixed;inset:0;z-index:995;border:none;background:transparent;cursor:default;padding:0}
+.skm-bulk-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:996;min-width:150px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 6px 20px rgba(16,24,40,.12);padding:4px;display:flex;flex-direction:column;gap:2px;animation:skm-form-in 140ms ease-out}
+.skm-bulk-item{display:flex;align-items:center;gap:8px;border:none;border-radius:8px;padding:7px 10px;background:transparent;font-size:13px;line-height:18px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer;font-family:inherit;text-align:left;transition:background 120ms ease,color 120ms ease}
+.skm-bulk-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-bulk-item:disabled{opacity:.5;cursor:default}
+.skm-bulk-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-border-l3,rgba(0,0,0,.2))}
+.skm-bulk-dot[data-on]{background:var(--dsw-alias-state-success-primary,#22c55e)}
+.skm-preset-pill{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;box-sizing:border-box;border:1px solid #c9d6f5;border-radius:10px;background:#eef3fd;color:#3b62d6;padding:0 10px;transition:border-color 140ms ease,background 140ms ease}
+.skm-preset-pill:hover{border-color:#acc4f0;background:#e4edfc}
+.skm-preset-select{appearance:none;-webkit-appearance:none;border:none;outline:none;background:transparent;color:inherit;font-size:13px;line-height:18px;font-family:inherit;padding:0 18px 0 0;cursor:pointer;max-width:150px}
+.skm-preset-pill-chevron{position:absolute;right:8px;pointer-events:none;color:#6f8cd6}
+.skm-view-toggle{flex:none;display:inline-flex;align-items:center;gap:2px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-base,#fff);padding:3px;transition:border-color 140ms ease}
+.skm-view-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-caption,#adb2b8);cursor:pointer;transition:background 140ms ease,color 140ms ease,transform 140ms ease}
+.skm-view-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-secondary,#61666b)}
+.skm-view-btn[data-active]{background:var(--dsw-alias-bg-module-platform,#eef0f2);color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-view-btn:active{transform:scale(.94)}
+.skm-hint-row{flex:none;display:flex;align-items:center;gap:10px;padding:8px 16px 0}
+.skm-hint-row-text{flex:1;min-width:0;font-size:12px;line-height:17px;color:var(--dsw-alias-label-tertiary,#81858c)}
+.skm-banner{flex:none;display:flex;align-items:center;gap:12px;margin:10px 16px 0;box-sizing:border-box;border:1px solid #f2df9e;border-radius:14px;background:#fdf8e3;padding:10px 12px;cursor:pointer;transition:border-color 140ms ease,box-shadow 140ms ease,transform 140ms ease}
+.skm-banner:hover{border-color:#ecd58a;box-shadow:0 2px 8px rgba(232,163,61,.12)}
+.skm-banner:active{transform:scale(.995)}
+.skm-banner-active{border-color:#e8a33d;box-shadow:0 0 0 3px rgba(232,163,61,.18)}
+.skm-banner-icon{flex:none;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;border:1.5px solid #e8a33d;color:#e8a33d;background:transparent}
+.skm-banner-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.skm-banner-title{font-size:14px;font-weight:700;line-height:20px;color:#1f2937}
+.skm-banner-sub{font-size:12px;line-height:17px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.skm-banner-btn{flex:none;display:inline-flex;align-items:center;height:32px;box-sizing:border-box;border:none;border-radius:10px;background:#e8850c;color:#fff;font-size:13px;font-weight:600;line-height:18px;font-family:inherit;padding:0 14px;cursor:pointer;box-shadow:0 1px 3px rgba(232,133,12,.35);transition:background 140ms ease,transform 140ms ease,box-shadow 140ms ease}
+.skm-banner-btn:hover{background:#d67906;box-shadow:0 2px 8px rgba(232,133,12,.4);transform:translateY(-1px)}
+.skm-banner-btn:active{transform:translateY(0) scale(.98)}
+.skm-main-scroll{flex:1;min-height:0;overflow-y:auto;padding:12px 16px 20px;display:flex;flex-direction:column;gap:14px}
+.skm-hub-section{display:flex;flex-direction:column;min-width:0}
+.skm-hub-section-head{display:flex;align-items:center;gap:8px;min-width:0;padding:2px 4px 0}
+.skm-no-result{padding:18px 4px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,#81858c)}
 .skm-skill-list{list-style:none;margin:0;padding:2px 6px 6px;width:100%;display:flex;flex-direction:column;gap:2px}
 .skm-skill-item{display:flex;flex-direction:column;gap:2px;padding:2px 0;border-radius:8px}
 .skm-skill-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
@@ -440,7 +581,7 @@ const SHEET = `
 .skm-toggle-knob{display:block;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform 180ms cubic-bezier(.3,1.4,.5,1)}
 .skm-toggle-on .skm-toggle-knob{transform:translateX(14px)}
 .skm-toggle-off .skm-toggle-knob{transform:translateX(0)}
-.skm-bundle-toggle{flex:none;display:inline-flex;align-items:center;gap:4px;margin-left:8px}
+.skm-bundle-toggle{flex:none;display:inline-flex;align-items:center;gap:4px;margin-left:0}
 
 /* ── Agent 预设分类圆球条 ─────────────────────────────────────── */
 .skm-preset-strip{flex:none;display:flex;align-items:flex-start;gap:14px;padding:2px 2px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
@@ -457,23 +598,30 @@ const SHEET = `
 .skm-preset-reset{flex:none;appearance:none;border:none;border-radius:12px;padding:2px 10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#999);background:transparent;cursor:pointer;font-family:inherit}
 .skm-preset-reset:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));color:var(--dsw-alias-label-primary,#eee)}
 
-/* ── 移动端：面板加高、文件查看器左右分栏改上下堆叠 ───────────── */
+/* ── 移动端：侧栏收窄/隐藏、查看器上下堆叠、卡片网格单列 ───────── */
 @media (max-width: 767.98px) {
   .skm-viewer-body{height:calc(100vh - 60px)}
   .skm-viewer-layout{flex-direction:column}
   .skm-viewer-nav{width:100%;border-right:none;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));flex:none;max-height:40%}
   .skm-viewer-content{flex:1;min-height:0}
-  /* 窄视口：技能卡片网格退成单列，保证卡片可读。 */
+  .skm-hub-side{display:none}
+  .skm-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .skm-skill-grid{grid-template-columns:minmax(0,1fr)}
+  .skm-toolbar{padding:12px 12px 4px}
+  .skm-stats-row{padding:12px 12px 0}
+  .skm-banner{margin:10px 12px 0}
+  .skm-main-scroll{padding:12px 12px 20px}
 }
 
 /* ── 减弱动效：卡片入场/悬停位移与开关回弹全部收敛 ───────────── */
 @media (prefers-reduced-motion: reduce) {
   .skm-skill-card{animation:none;opacity:1;transition:none}
+  .skm-stat{animation:none;opacity:1;transition:none}
+  .skm-bulk-menu{animation:none}
   .skm-toggle-knob{transition:none}
   .skm-toggle{transition:none}
   .skm-tag{transition:none}
-  .skm-skill-copy,.skm-skill-icon,.skm-skill-foot-icon,.skm-icon-action,.skm-bundle{transition:none}
+  .skm-skill-copy,.skm-skill-icon,.skm-skill-foot-icon,.skm-icon-action,.skm-bundle,.skm-hub-item,.skm-tool-button,.skm-banner,.skm-banner-btn,.skm-view-btn{transition:none}
 }
 `
 
@@ -606,43 +754,10 @@ function renderSkillMarkdown(text: string): string {
   return html
 }
 
-/** ---------------------------------------------------------------- 预设圆球 */
+/** ---------------------------------------------------------------- 预设 */
 
 /** 「全部 Agent」虚拟预设的哨兵 id（不会与真实 preset id 冲突：真实 id 不含 *）。 */
 const ALL_PRESETS = '*'
-
-/** 球内文字：中文取首字，拉丁取首字母。 */
-function ballInitial(label: string): string {
-  const trimmed = label.trim()
-  if (trimmed === '') return '?'
-  return [...trimmed][0] ?? '?'
-}
-
-/** 一个预设圆球（无底色，仅描边轮廓；有单独设置时右下角点亮小圆点）。 */
-function PresetBall({ id, label, active, dot, title, onSelect }: {
-  id: string
-  label: string
-  active: boolean
-  dot: boolean
-  title: string
-  onSelect: () => void
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      className={css.presetBallWrap}
-      data-active={active ? 'true' : undefined}
-      aria-pressed={active}
-      title={title}
-      onClick={onSelect}
-    >
-      <span className={css.presetBall} data-dot={dot ? 'true' : undefined}>
-        {id === ALL_PRESETS ? <IconAgentPresetOutline16 size={18} aria-hidden="true" /> : ballInitial(label)}
-      </span>
-      <span className={css.presetBallLabel}>{label}</span>
-    </button>
-  )
-}
 
 /** ---------------------------------------------------------------- 技能行 */
 
@@ -681,6 +796,69 @@ function CheckIcon(): JSX.Element {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="20 6 9 17 4 12" />
+    </svg>
+  )
+}
+
+/* ── Skills Hub 页面图标（Feather 线性风） ─────────────── */
+
+function SearchIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+function TagIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" y1="7" x2="7.01" y2="7" />
+    </svg>
+  )
+}
+
+function GridIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" />
+      <rect x="14" y="3" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" />
+    </svg>
+  )
+}
+
+function ListIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  )
+}
+
+function BulbIcon(): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+      <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z" />
+    </svg>
+  )
+}
+
+function HubLogoIcon(): JSX.Element {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 1.5l9 5.2v10.6l-9 5.2-9-5.2V6.7l9-5.2z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M8.5 9.5l7-3.8M8.5 9.5v2.4c0 .8.6 1.4 1.4 1.4h4.2c.8 0 1.4.6 1.4 1.4v2.6l-7 3.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   )
 }
@@ -851,7 +1029,8 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   ensureStyles()
   const [state, setState] = useState<PanelState>({ status: 'loading' })
   const [reload, setReload] = useState(0)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Skills Hub 默认全展开：collapsed 只记录「被用户收起」的分区（空 = 全部展开）。
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [viewer, setViewer] = useState<ViewerState | null>(null)
   const [assignTarget, setAssignTarget] = useState<SkillInfo | null>(null)
   const [newBundleOpen, setNewBundleOpen] = useState(false)
@@ -880,6 +1059,13 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [presets, setPresets] = useState<PresetRow[]>([])
   const [overrides, setOverrides] = useState<Record<string, Record<string, boolean>>>({})
   const [activePreset, setActivePreset] = useState<string>(ALL_PRESETS)
+  // Skills Hub 工具栏：搜索词 / 来源筛选(全部=all|bundles|loose) / 名称排序 / 批量菜单 / 视图切换
+  const [query, setQuery] = useState('')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'bundles' | 'loose'>('all')
+  const [sortAsc, setSortAsc] = useState(true)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
   const refresh = (): void => {
     // 技能目录变更后,同步失效 skill-source 的 slash 菜单快照缓存。
@@ -1014,13 +1200,15 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   }
 
   const toggleExpanded = (bundleId: string): void => {
-    setExpanded((current) => {
+    setCollapsed((current) => {
       const next = new Set(current)
       if (next.has(bundleId)) next.delete(bundleId)
       else next.add(bundleId)
       return next
     })
   }
+
+  // Skills Hub 默认全展开（参考图整页可见）；用户手动收起后保持各自状态。
 
   const loadViewerContent = async (skillName: string, filePath: string): Promise<void> => {
     try {
@@ -1216,6 +1404,51 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const scopeLabel = activePreset === ALL_PRESETS
     ? t('scopeAll')
     : (presets.find((preset) => preset.id === activePreset)?.name ?? activePreset)
+
+  /* ── Skills Hub 派生数据：搜索 / 来源筛选 / 排序 ── */
+  const q = query.trim().toLowerCase()
+  const qMatch = (skill: SkillInfo): boolean => {
+    if (q === '') return true
+    if (skill.name.toLowerCase().includes(q)) return true
+    return (skill.description ?? '').toLowerCase().includes(q)
+  }
+  const sortedSkills = (list: SkillInfo[]): SkillInfo[] => [...list].sort((a, b) => {
+    const order = a.name.localeCompare(b.name)
+    return sortAsc ? order : -order
+  })
+  const visibleBundles = (sourceFilter === 'loose' ? [] : bundles)
+    .map((bundle) => ({ ...bundle, skills: sortedSkills(bundle.skills.filter(qMatch)) }))
+    .filter((bundle) => bundle.skills.length > 0)
+  const visibleLoose = sourceFilter === 'bundles' ? [] : sortedSkills(loose.filter(qMatch))
+  const totalSkills = bundles.reduce((n, bundle) => n + bundle.skillCount, 0) + loose.length
+  const bundleCount = bundles.length
+  const presetCount = presets.length
+  const enabledCount = (() => {
+    let n = 0
+    for (const bundle of bundles) for (const skill of bundle.skills) if (toggles.skills[skill.name] !== false) n += 1
+    for (const skill of loose) if (toggles.skills[skill.name] !== false) n += 1
+    return n
+  })()
+  const noResults = visibleBundles.length === 0 && visibleLoose.length === 0
+
+  /** 批量启用/禁用当前筛选下可见的技能（一次串行推进，失败提示）。 */
+  const batchSet = (enabled: boolean): void => {
+    setBulkOpen(false)
+    if (bulkBusy) return
+    const targets = visibleBundles.flatMap((bundle) => bundle.skills).concat(visibleLoose)
+    if (targets.length === 0) return
+    setBulkBusy(true)
+    const actions = targets.map((skill) => activePreset === ALL_PRESETS
+      ? skillApi.setSkillEnabled(skill.name, enabled)
+      : skillApi.setPresetSkillEnabled(activePreset, skill.name, enabled))
+    void Promise.all(actions).then(
+      () => { refreshTogglesOnly() },
+      (error) => {
+        setInstallError(skillT('toggleFailed', { message: error instanceof Error ? error.message : String(error) }))
+      },
+    ).finally(() => { setBulkBusy(false) })
+  }
+
   const trimmedName = installName.trim()
   const nameInvalid = trimmedName !== '' && !SKILL_NAME_PATTERN.test(trimmedName)
 
@@ -1238,7 +1471,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
       anchor={anchor}
       onCardMouseEnter={onCardMouseEnter}
       onCardMouseLeave={onCardMouseLeave}
-      width={700}
+      size={{ width: 1400, height: 860 }}
       ariaLabel={t('panelTitle')}
     >
       <PshHead
@@ -1250,256 +1483,420 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
         }}
       />
       <PshBody className={css.modalBody}>
-      <div className={`${css.panel} ${modalStaggerClass}`} aria-busy={state.status === 'loading'}>
-        {/* Agent 预设分类：圆球条（首个是「全部 Agent」= 全局层） */}
-        <div className={css.presetStrip} role="group" aria-label={t('presetStripLabel')}>
-          <PresetBall
-            id={ALL_PRESETS}
-            label={t('presetAll')}
-            active={activePreset === ALL_PRESETS}
-            dot={false}
-            title={t('presetAllName')}
-            onSelect={() => { setActivePreset(ALL_PRESETS) }}
-          />
-          {presets.map((preset) => {
-            const label = preset.name ?? preset.id
-            const count = Object.values(overrides[preset.id] ?? {}).filter((state2) => state2 === false).length
-            const parts = [label, preset.id]
-            if (preset.isDefault === true) parts.push(t('presetDefaultTag'))
-            if (count > 0) parts.push(t('presetOverrideCount', { n: count }))
-            return (
-              <PresetBall
-                key={preset.id}
-                id={preset.id}
-                label={label}
-                active={activePreset === preset.id}
-                dot={count > 0}
-                title={parts.join(' · ')}
-                onSelect={() => { setActivePreset(preset.id) }}
-              />
-            )
-          })}
-        </div>
-        <div className={css.presetHint}>
-          <span className={css.presetHintText}>
-            {activePreset === ALL_PRESETS
-              ? t('presetHintAll')
-              : t('presetHintScoped', { name: presets.find((preset) => preset.id === activePreset)?.name ?? activePreset })}
-          </span>
-          {activePreset !== ALL_PRESETS && Object.keys(presetOverride).length > 0 && (
-            <button type="button" className={css.presetReset} onClick={resetActivePreset}>
-              {t('presetReset')}
-            </button>
-          )}
-        </div>
-
-        <div className={css.topRow}>
-          <Tooltip label={t('newBundle')} side="bottom" delayMs={500}>
-            <button type="button" className={css.newBundleButton} aria-label={t('newBundle')} aria-expanded={newBundleOpen}
-              onClick={() => { setNewBundleOpen((value) => !value) }}>
-              <IconPlusOutline16 size={14} />
-              {t('newBundle')}
-            </button>
-          </Tooltip>
-        </div>
-
-        {newBundleOpen && (
-          <form className={css.inlineForm} onSubmit={(event) => { void submitNewBundle(event) }}>
-            <input className={css.inlineInput} value={newBundleName} placeholder={t('newBundlePlaceholder')}
-              aria-label={t('newBundlePlaceholder')} autoFocus disabled={creatingBundle}
-              onChange={(event) => { setNewBundleName(event.currentTarget.value) }} />
-            <Button variant="primary" type="submit" disabled={creatingBundle || newBundleName.trim() === ''}>{t('create')}</Button>
-            <Button variant="outline" type="button" disabled={creatingBundle} onClick={() => { setNewBundleOpen(false) }}>{t('cancel')}</Button>
-          </form>
-        )}
-
-        <div
-          className={`${css.upload} ${dropActive ? css.uploadActive : ''}`}
-          onClick={() => { fileInput.current?.click() }}
-          onDragOver={(event) => { event.preventDefault(); setDropActive(true) }}
-          onDragLeave={() => { setDropActive(false) }}
-          onDrop={(event) => { void onDrop(event) }}
-          role="button"
-          tabIndex={0}
-          aria-label={t('uploadHint')}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              fileInput.current?.click()
-            }
-          }}
-        >
-          <IconFolderOpenOutline16 size={16} aria-hidden="true" />
-          <span>{t('uploadHint')}</span>
-          <input
-            ref={fileInput}
-            type="file"
-            className={css.hiddenInput}
-            multiple
-            {...{ webkitdirectory: '' }}
-            onChange={(event) => {
-              acceptFiles(event.currentTarget.files === null ? null : Array.from(event.currentTarget.files))
-            }}
-          />
-        </div>
-
-        {install !== null && (
-          <form className={css.installForm} onSubmit={(event) => { void confirmInstall(event) }}>
-            <div className={css.installRow}>
-              <input className={css.inlineInput} value={installName}
-                placeholder={install.archive === true ? t('installNameFromArchive') : t('installNamePlaceholder')}
-                aria-label={t('installName')}
-                disabled={installing || install.archive === true}
-                onChange={(event) => { setInstallName(event.currentTarget.value) }} />
-              <input className={css.inlineInput} value={installDescription} placeholder={t('installDescription')}
-                aria-label={t('installDescription')} disabled={installing}
-                onChange={(event) => { setInstallDescription(event.currentTarget.value) }} />
-              <label className={css.bundleSelect}>
-                <span className={css.visuallyHidden}>{t('installBundle')}</span>
-                <select value={installBundleId ?? ''} disabled={installing}
-                  onChange={(event) => { setInstallBundleId(event.currentTarget.value === '' ? undefined : event.currentTarget.value) }}>
-                  <option value="">{t('installLoose')}</option>
-                  {bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
-                </select>
-              </label>
-              <span className={css.installMeta}>
-                {install.archive === true
-                  ? t('uploadMeta', { n: 1, folder: install.folderName })
-                  : t('uploadMeta', { n: install.files.length, folder: install.folderName })}
-              </span>
-            </div>
-            {install.archive !== true && nameInvalid && <p className={css.error} role="alert">{t('installNameInvalid')}</p>}
-            <div className={css.installActions}>
-              <Button variant="primary" type="submit" disabled={installing || (install.archive !== true && (trimmedName === '' || nameInvalid))}>{t('installConfirm')}</Button>
-              <Button variant="outline" type="button" disabled={installing} onClick={() => { setInstall(null) }}>{t('installCancel')}</Button>
-            </div>
-            {installError !== null && <p className={css.error} role="alert">{installError}</p>}
-          </form>
-        )}
-
-        {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
-        {state.status === 'error' ? (
-          <div className={css.failure}>
-            <p role="alert">{t('error')}</p>
-            <Button variant="outline" onClick={refresh}><IconRefreshOutline14 /> {t('retry')}</Button>
+      <div className={css.hub} aria-busy={state.status === 'loading'}>
+        {/* ── 左侧栏：品牌 + 工作区/管理导航 ── */}
+        <aside className={css.hubSide}>
+          <div className={css.hubBrand}>
+            <span className={css.hubLogo}><HubLogoIcon /></span>
+            <span className={css.hubBrandText}>
+              <span className={css.hubBrandTitle}>{t('panelTitle')}</span>
+              <span className={css.hubBrandSub}>{t('hubSubtitle')}</span>
+            </span>
           </div>
-        ) : null}
+          <div className={css.hubGroup}>{t('hubWorkspace')}</div>
+          <button
+            type="button"
+            className={`${css.hubItem} ${sourceFilter === 'all' ? css.hubItemActive : ''}`}
+            data-active={sourceFilter === 'all' || undefined}
+            onClick={() => { setSourceFilter('all') }}
+          >
+            <span className={css.hubItemIcon}><GridIcon /></span>
+            <span className={css.hubItemLabel}>{t('hubMySkills')}</span>
+            <span className={css.hubItemCount}>{totalSkills}</span>
+          </button>
+          <button type="button" className={css.hubItem} onClick={() => { fileInput.current?.click() }}>
+            <span className={css.hubItemIcon}><IconPlusOutline16 size={14} /></span>
+            <span className={css.hubItemLabel}>{t('hubAddSkills')}</span>
+          </button>
+          <div className={css.hubGroup}>{t('hubManage')}</div>
+          <button
+            type="button"
+            className={`${css.hubItem} ${sourceFilter === 'bundles' ? css.hubItemActive : ''}`}
+            data-active={sourceFilter === 'bundles' || undefined}
+            onClick={() => { setSourceFilter('bundles') }}
+          >
+            <span className={css.hubItemIcon}><IconFolderOpenOutline16 size={14} /></span>
+            <span className={css.hubItemLabel}>{t('hubBundles')}</span>
+            <span className={css.hubItemCount}>{bundleCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`${css.hubItem} ${activePreset !== ALL_PRESETS ? css.hubItemActive : ''}`}
+            data-active={activePreset !== ALL_PRESETS || undefined}
+            onClick={() => { setSourceFilter('all') }}
+          >
+            <span className={css.hubItemIcon}><TagIcon /></span>
+            <span className={css.hubItemLabel}>{t('hubPresets')}</span>
+            <span className={css.hubItemCount}>{presetCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`${css.hubItem} ${sourceFilter === 'loose' ? css.hubItemActive : ''}`}
+            data-active={sourceFilter === 'loose' || undefined}
+            onClick={() => { setSourceFilter('loose') }}
+          >
+            <span className={css.hubItemIcon}><ListIcon /></span>
+            <span className={css.hubItemLabel}>{t('hubLoose')}</span>
+            <span className={css.hubItemCount}>{loose.length}</span>
+          </button>
+        </aside>
 
-        {state.status === 'ready' && (
-          <>
-            <h3 className={css.sectionTitle}>{t('bundlesTitle')}</h3>
-            {bundles.length === 0 ? (
-              <p className={css.status}>{t('bundlesEmpty')}</p>
-            ) : (
-              <ul className={css.bundleList}>
-                {bundles.map((bundle) => {
-                  const open2 = expanded.has(bundle.id)
-                  const renamingThis = renameTarget?.bundleId === bundle.id
-                  const bundleEnabled = bundleEnabledIn(bundle)
-                  const bundleToggling = toggling.has(`bundle:${bundle.id}`)
-                  return (
-                    <li key={bundle.id} className={css.bundle} data-open={open2 ? 'true' : undefined} data-renamed={renamedFlash === bundle.id ? 'true' : undefined}>
-                      {/* 整行常驻：开关 / 名称 / 数量 / 箭头 / 改名删除钮在改名期间
-                          全部保留。原来这里是「表单 vs 整行」二选一，一点改名整行内容
-                          就被替换掉，看起来像技能包凭空消失。 */}
-                      <>
-                        <span className={css.bundleToggle}>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={bundleEnabled}
-                            aria-label={bundleEnabled ? t('disableBundle') : t('enableBundle')}
-                            title={bundleEnabled ? t('disableBundle') : t('enableBundle')}
-                            className={`${css.toggle} ${bundleEnabled ? css.toggleOn : css.toggleOff}`}
-                            disabled={bundleToggling || bundle.skillCount === 0}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              toggleBundle(bundle, !bundleEnabled)
-                            }}
-                          >
-                            <span className={css.toggleKnob} aria-hidden="true" />
-                          </button>
-                        </span>
-                        <button type="button" className={css.bundleRow} aria-expanded={open2} onClick={() => { toggleExpanded(bundle.id) }}>
-                          <span className={css.bundleName}>{bundle.name}</span>
-                          <span className={css.bundleCount}>{t('skillsCount', { n: bundle.skillCount })}</span>
-                          <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                        </button>
-                        <div className={css.bundleActions}>
-                          <Tooltip label={t('rename')} side="bottom" delayMs={500}>
-                            <button type="button" className={css.iconAction} aria-label={t('rename')}
-                              onClick={() => { setRenameTarget({ bundleId: bundle.id, name: bundle.name }) }}>
-                              <IconEditOutline16 size={14} />
-                            </button>
-                          </Tooltip>
-                          <Tooltip label={t('delete')} side="bottom" delayMs={500}>
-                            <button type="button" className={css.iconAction} aria-label={t('delete')}
-                              onClick={() => { setConfirm({ kind: 'bundle', bundle }) }}>
-                              <IconTrashOutline16 size={14} />
-                            </button>
-                          </Tooltip>
-                        </div>
-                      </>
-                      {renamingThis && renameTarget !== null && (
-                        <form className={`${css.inlineForm} ${css.inlineFormBlock}`} onSubmit={(event) => { void submitRename(event) }}>
-                          <input className={css.inlineInput} value={renameTarget.name} placeholder={t('renameBundlePlaceholder')}
-                            aria-label={t('renameBundlePlaceholder')} autoFocus disabled={renaming}
-                            onChange={(event) => {
-                              // 先把值取出再进 setState 回调：React 合成事件在
-                              // 回调执行完毕后会把 currentTarget 置空，若在函数式
-                              // updater 里才读 event.currentTarget.value，渲染阶段
-                              // 会抛 Cannot read properties of null，整个技能面板
-                              // 被 ErrorBoundary 摘掉——表现就是「改名时卡片消失」。
-                              const next = event.currentTarget.value
-                              setRenameTarget((current) => current === null ? current : { ...current, name: next })
-                            }} />
-                          <Button variant="primary" type="submit" disabled={renaming || renameTarget.name.trim() === ''}>{t('rename')}</Button>
-                          <Button variant="outline" type="button" disabled={renaming} onClick={() => { setRenameTarget(null) }}>{t('cancel')}</Button>
-                        </form>
-                      )}
-                      {open2 && (
-                        <ul className={css.skillGrid}>
-                          {bundle.skills.length === 0 ? (
-                            <li className={css.status}>{t('bundleNoSkills')}</li>
-                          ) : bundle.skills.map((skill, index) => (
-                            <SkillCard key={skill.name} skill={skill} bundleId={bundle.id} bundleName={bundle.name}
-                              enabled={skillEnabledIn(skill.name)}
-                              lockedReason={skillLockedReason(skill.name)}
-                              scopeLabel={scopeLabel}
-                              index={index}
-                              onToggle={toggleSkill}
-                              onView={openViewer}
-                              onRemove={(s) => { void removeFromBundle(bundle.id, s.name) }}
-                              onDelete={(s) => { setConfirm({ kind: 'skill', name: s.name }) }} />
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+        {/* ── 主区 ── */}
+        <div className={css.hubMain}>
+          {/* 统计行 */}
+          <div className={css.statsRow}>
+            <div className={css.stat}><span className={css.statLabel}>{t('statManaged')}</span><span className={css.statValue}>{totalSkills}</span></div>
+            <div className={css.stat}><span className={css.statLabel}>{t('statEnabled')}</span><span className={css.statValue}>{enabledCount}</span></div>
+            <div className={css.stat}><span className={css.statLabel}>{t('statLoose')}</span><span className={css.statValue}>{loose.length}</span></div>
+            <div className={css.stat}>
+              <span className={css.statLabel}>{t('statSync')}</span>
+              <span className={`${css.statValue} ${css.statValueInline}`}><i className={css.statDot} aria-hidden="true" />{t('statHealthy')}</span>
+            </div>
+          </div>
 
-            <h3 className={css.sectionTitle}>{t('looseTitle')}</h3>
-            {loose.length === 0 ? (
-              <p className={css.looseEmpty}>{t('looseEmpty')}</p>
-            ) : (
-              <ul className={css.skillGrid}>
-                {loose.map((skill, index) => (
-                  <SkillCard key={skill.name} skill={skill} bundleId={null} bundleName={null}
-                    enabled={skillEnabledIn(skill.name)}
-                    lockedReason={skillLockedReason(skill.name)}
-                    scopeLabel={scopeLabel}
-                    index={index}
-                    onToggle={toggleSkill}
-                    onView={openViewer}
-                    onAssign={(s) => { setAssignTarget(s) }}
-                    onDelete={(s) => { setConfirm({ kind: 'skill', name: s.name }) }} />
+          {/* 工具栏：搜索 / 来源筛选 / 排序 / 批量 / 新建 / 预设 / 视图 */}
+          <div className={css.toolbar}>
+            <div className={css.searchBox}>
+              <SearchIcon />
+              <input
+                className={css.searchInput}
+                value={query}
+                placeholder={t('searchPlaceholder')}
+                aria-label={t('searchPlaceholder')}
+                onChange={(event) => { setQuery(event.currentTarget.value) }}
+              />
+            </div>
+            <label className={css.toolSelectWrap}>
+              <span className={css.visuallyHidden}>{t('filterAll')}</span>
+              <select
+                className={css.toolSelect}
+                value={sourceFilter}
+                onChange={(event) => { setSourceFilter(event.currentTarget.value as 'all' | 'bundles' | 'loose') }}
+              >
+                <option value="all">{t('filterAll')}</option>
+                <option value="bundles">{t('filterBundles')}</option>
+                <option value="loose">{t('filterLoose')}</option>
+              </select>
+              <IconChevronDownOutline14 size={12} className={css.toolSelectChevron} aria-hidden="true" />
+            </label>
+            <button
+              type="button"
+              className={css.toolButton}
+              aria-pressed={!sortAsc}
+              onClick={() => { setSortAsc((value) => !value) }}
+            >
+              {t('sortLabel')} {sortAsc ? '↑' : '↓'}
+            </button>
+            <div className={css.bulkWrap}>
+              <button
+                type="button"
+                className={css.toolButton}
+                aria-expanded={bulkOpen}
+                disabled={bulkBusy || noResults}
+                onClick={() => { setBulkOpen((value) => !value) }}
+              >
+                {t('bulk')}
+              </button>
+              {bulkOpen && (
+                <>
+                  <button type="button" className={css.bulkOverlay} aria-label={t('close')} onClick={() => { setBulkOpen(false) }} />
+                  <div className={css.bulkMenu} role="menu">
+                    <button type="button" role="menuitem" className={css.bulkItem} disabled={bulkBusy} onClick={() => { batchSet(true) }}>
+                      <i className={css.bulkDot} data-on="true" aria-hidden="true" />{t('bulkEnableAll')}
+                    </button>
+                    <button type="button" role="menuitem" className={css.bulkItem} disabled={bulkBusy} onClick={() => { batchSet(false) }}>
+                      <i className={css.bulkDot} aria-hidden="true" />{t('bulkDisableAll')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <span className={css.toolbarSpacer} />
+            <Tooltip label={t('newBundle')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.toolButton}
+                aria-expanded={newBundleOpen}
+                onClick={() => { setNewBundleOpen((value) => !value) }}
+              >
+                <IconPlusOutline16 size={14} />
+                {t('newBundle')}
+              </button>
+            </Tooltip>
+            <label className={css.presetPill}>
+              <TagIcon />
+              <select
+                className={css.presetSelect}
+                value={activePreset}
+                aria-label={t('presetSelect')}
+                onChange={(event) => { setActivePreset(event.currentTarget.value) }}
+              >
+                <option value={ALL_PRESETS}>{t('presetAllName')}</option>
+                {presets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{preset.name ?? preset.id}</option>
                 ))}
-              </ul>
+              </select>
+              <IconChevronDownOutline14 size={12} className={css.presetPillChevron} aria-hidden="true" />
+            </label>
+            <div className={css.viewToggle} role="group" aria-label={t('viewGrid')}>
+              <button
+                type="button"
+                className={css.viewBtn}
+                data-active={viewMode === 'list' || undefined}
+                aria-label={t('viewList')}
+                aria-pressed={viewMode === 'list'}
+                onClick={() => { setViewMode('list') }}
+              >
+                <ListIcon />
+              </button>
+              <button
+                type="button"
+                className={css.viewBtn}
+                data-active={viewMode === 'grid' || undefined}
+                aria-label={t('viewGrid')}
+                aria-pressed={viewMode === 'grid'}
+                onClick={() => { setViewMode('grid') }}
+              >
+                <GridIcon />
+              </button>
+            </div>
+          </div>
+
+          {/* 预设提示行：当前编辑层说明 + 清空该预设的单独设置 */}
+          <div className={css.hintRow}>
+            <span className={css.hintRowText}>
+              {activePreset === ALL_PRESETS
+                ? t('presetHintAll')
+                : t('presetHintScoped', { name: presets.find((preset) => preset.id === activePreset)?.name ?? activePreset })}
+            </span>
+            {activePreset !== ALL_PRESETS && Object.keys(presetOverride).length > 0 && (
+              <button type="button" className={css.presetReset} onClick={resetActivePreset}>
+                {t('presetReset')}
+              </button>
             )}
-          </>
-        )}
+          </div>
+
+          {/* 黄色发现横幅：安装 / 导入入口（可拖放） */}
+          <div
+            className={`${css.banner} ${dropActive ? css.bannerActive : ''}`}
+            onClick={() => { fileInput.current?.click() }}
+            onDragOver={(event) => { event.preventDefault(); setDropActive(true) }}
+            onDragLeave={() => { setDropActive(false) }}
+            onDrop={(event) => { void onDrop(event) }}
+            role="button"
+            tabIndex={0}
+            aria-label={t('uploadHint')}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                fileInput.current?.click()
+              }
+            }}
+          >
+            <span className={css.bannerIcon}><BulbIcon /></span>
+            <span className={css.bannerText}>
+              <span className={css.bannerTitle}>
+                {install === null ? t('bannerTitle') : t('bannerDiscovered')}
+              </span>
+              <span className={css.bannerSub}>
+                {install === null
+                  ? t('bannerSub')
+                  : t('bannerFound', { n: install.archive === true ? 1 : install.files.length, folder: install.folderName })}
+              </span>
+            </span>
+            <button
+              type="button"
+              className={css.bannerBtn}
+              onClick={(event) => {
+                event.stopPropagation()
+                fileInput.current?.click()
+              }}
+            >
+              {install === null ? t('bannerBtnBrowse') : t('bannerBtnReview')}
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              className={css.hiddenInput}
+              multiple
+              {...{ webkitdirectory: '' }}
+              onChange={(event) => {
+                acceptFiles(event.currentTarget.files === null ? null : Array.from(event.currentTarget.files))
+              }}
+            />
+          </div>
+
+          {newBundleOpen && (
+            <form className={css.inlineForm} onSubmit={(event) => { void submitNewBundle(event) }}>
+              <input className={css.inlineInput} value={newBundleName} placeholder={t('newBundlePlaceholder')}
+                aria-label={t('newBundlePlaceholder')} autoFocus disabled={creatingBundle}
+                onChange={(event) => { setNewBundleName(event.currentTarget.value) }} />
+              <Button variant="primary" type="submit" disabled={creatingBundle || newBundleName.trim() === ''}>{t('create')}</Button>
+              <Button variant="outline" type="button" disabled={creatingBundle} onClick={() => { setNewBundleOpen(false) }}>{t('cancel')}</Button>
+            </form>
+          )}
+
+          {install !== null && (
+            <form className={css.installForm} onSubmit={(event) => { void confirmInstall(event) }}>
+              <div className={css.installRow}>
+                <input className={css.inlineInput} value={installName}
+                  placeholder={install.archive === true ? t('installNameFromArchive') : t('installNamePlaceholder')}
+                  aria-label={t('installName')}
+                  disabled={installing || install.archive === true}
+                  onChange={(event) => { setInstallName(event.currentTarget.value) }} />
+                <input className={css.inlineInput} value={installDescription} placeholder={t('installDescription')}
+                  aria-label={t('installDescription')} disabled={installing}
+                  onChange={(event) => { setInstallDescription(event.currentTarget.value) }} />
+                <label className={css.bundleSelect}>
+                  <span className={css.visuallyHidden}>{t('installBundle')}</span>
+                  <select value={installBundleId ?? ''} disabled={installing}
+                    onChange={(event) => { setInstallBundleId(event.currentTarget.value === '' ? undefined : event.currentTarget.value) }}>
+                    <option value="">{t('installLoose')}</option>
+                    {bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
+                  </select>
+                </label>
+                <span className={css.installMeta}>
+                  {install.archive === true
+                    ? t('uploadMeta', { n: 1, folder: install.folderName })
+                    : t('uploadMeta', { n: install.files.length, folder: install.folderName })}
+                </span>
+              </div>
+              {install.archive !== true && nameInvalid && <p className={css.error} role="alert">{t('installNameInvalid')}</p>}
+              <div className={css.installActions}>
+                <Button variant="primary" type="submit" disabled={installing || (install.archive !== true && (trimmedName === '' || nameInvalid))}>{t('installConfirm')}</Button>
+                <Button variant="outline" type="button" disabled={installing} onClick={() => { setInstall(null) }}>{t('installCancel')}</Button>
+              </div>
+              {installError !== null && <p className={css.error} role="alert">{installError}</p>}
+            </form>
+          )}
+
+          {/* 内容区：技能包 sections + 散装技能 */}
+          <div className={`${css.mainScroll} ${modalStaggerClass}`}>
+            {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
+            {state.status === 'error' ? (
+              <div className={css.failure}>
+                <p role="alert">{t('error')}</p>
+                <Button variant="outline" onClick={refresh}><IconRefreshOutline14 /> {t('retry')}</Button>
+              </div>
+            ) : null}
+
+            {state.status === 'ready' && (
+              noResults ? (
+                <p className={css.noResult}>{t('noMatch')}</p>
+              ) : (
+                <>
+                  {visibleBundles.map((bundle) => {
+                    const open2 = !collapsed.has(bundle.id)
+                    const renamingThis = renameTarget?.bundleId === bundle.id
+                    const bundleEnabled = bundleEnabledIn(bundle)
+                    const bundleToggling = toggling.has(`bundle:${bundle.id}`)
+                    const gridClass = viewMode === 'list' ? `${css.skillGrid} ${css.skillGridList}` : css.skillGrid
+                    return (
+                      <section key={bundle.id} className={css.hubSection} data-open={open2 ? 'true' : undefined}>
+                        <header className={css.hubSectionHead}>
+                          <span className={css.bundleToggle}>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={bundleEnabled}
+                              aria-label={bundleEnabled ? t('disableBundle') : t('enableBundle')}
+                              title={bundleEnabled ? t('disableBundle') : t('enableBundle')}
+                              className={`${css.toggle} ${bundleEnabled ? css.toggleOn : css.toggleOff}`}
+                              disabled={bundleToggling || bundle.skillCount === 0}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                toggleBundle(bundle, !bundleEnabled)
+                              }}
+                            >
+                              <span className={css.toggleKnob} aria-hidden="true" />
+                            </button>
+                          </span>
+                          <button type="button" className={css.bundleRow} aria-expanded={open2} onClick={() => { toggleExpanded(bundle.id) }}>
+                            <span className={css.bundleName} title={bundle.name}>{bundle.name}</span>
+                            <span className={css.bundleCount}>{t('skillsCount', { n: bundle.skillCount })}</span>
+                            <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                          </button>
+                          <div className={css.bundleActions}>
+                            <Tooltip label={t('rename')} side="bottom" delayMs={500}>
+                              <button type="button" className={css.iconAction} aria-label={t('rename')}
+                                onClick={() => { setRenameTarget({ bundleId: bundle.id, name: bundle.name }) }}>
+                                <IconEditOutline16 size={14} />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label={t('delete')} side="bottom" delayMs={500}>
+                              <button type="button" className={css.iconAction} aria-label={t('delete')}
+                                onClick={() => { setConfirm({ kind: 'bundle', bundle }) }}>
+                                <IconTrashOutline16 size={14} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                          {renamingThis && renameTarget !== null && (
+                            <form className={`${css.inlineForm} ${css.inlineFormBlock}`} onSubmit={(event) => { void submitRename(event) }}>
+                              <input className={css.inlineInput} value={renameTarget.name} placeholder={t('renameBundlePlaceholder')}
+                                aria-label={t('renameBundlePlaceholder')} autoFocus disabled={renaming}
+                                onChange={(event) => {
+                                  // 先把值取出再进 setState 回调：React 合成事件在
+                                  // 回调执行完毕后会把 currentTarget 置空，若在函数式
+                                  // updater 里才读 event.currentTarget.value，渲染阶段
+                                  // 会抛 Cannot read properties of null，整个技能面板
+                                  // 被 ErrorBoundary 摘掉——表现就是「改名时卡片消失」。
+                                  const next = event.currentTarget.value
+                                  setRenameTarget((current) => current === null ? current : { ...current, name: next })
+                                }} />
+                              <Button variant="primary" type="submit" disabled={renaming || renameTarget.name.trim() === ''}>{t('rename')}</Button>
+                              <Button variant="outline" type="button" disabled={renaming} onClick={() => { setRenameTarget(null) }}>{t('cancel')}</Button>
+                            </form>
+                          )}
+                        </header>
+                        {open2 && (
+                          <ul className={gridClass} data-renamed={renamedFlash === bundle.id ? 'true' : undefined}>
+                            {bundle.skills.length === 0 ? (
+                              <li className={css.status}>{t('bundleNoSkills')}</li>
+                            ) : bundle.skills.map((skill, index) => (
+                              <SkillCard key={skill.name} skill={skill} bundleId={bundle.id} bundleName={bundle.name}
+                                enabled={skillEnabledIn(skill.name)}
+                                lockedReason={skillLockedReason(skill.name)}
+                                scopeLabel={scopeLabel}
+                                index={index}
+                                onToggle={toggleSkill}
+                                onView={openViewer}
+                                onRemove={(s) => { void removeFromBundle(bundle.id, s.name) }}
+                                onDelete={(s) => { setConfirm({ kind: 'skill', name: s.name }) }} />
+                            ))}
+                          </ul>
+                        )}
+                      </section>
+                    )
+                  })}
+
+                  {visibleLoose.length > 0 && (
+                    <section className={css.hubSection} data-open="true">
+                      <header className={css.hubSectionHead}>
+                        <span className={css.bundleRow} style={{ cursor: 'default' }}>
+                          <span className={css.bundleName}><ListIcon /> {t('looseTitle')}</span>
+                          <span className={css.bundleCount}>{t('skillsCount', { n: visibleLoose.length })}</span>
+                        </span>
+                      </header>
+                      <ul className={viewMode === 'list' ? `${css.skillGrid} ${css.skillGridList}` : css.skillGrid}>
+                        {visibleLoose.map((skill, index) => (
+                          <SkillCard key={skill.name} skill={skill} bundleId={null} bundleName={null}
+                            enabled={skillEnabledIn(skill.name)}
+                            lockedReason={skillLockedReason(skill.name)}
+                            scopeLabel={scopeLabel}
+                            index={index}
+                            onToggle={toggleSkill}
+                            onView={openViewer}
+                            onAssign={(s) => { setAssignTarget(s) }}
+                            onDelete={(s) => { setConfirm({ kind: 'skill', name: s.name }) }} />
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                </>
+              )
+            )}
+          </div>
+        </div>
       </div>
       </PshBody>
 
