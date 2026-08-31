@@ -6,10 +6,10 @@
  * 旧代码的 React.createElement 树在此转写为 JSX，样式沿用旧 .skm-* 类名与 token。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties } from 'react'
 import {
   Button, IconAgentPresetOutline16, IconChevronDownOutline14, IconCloseOutline16, IconEditOutline16,
-  IconFolderOpenOutline16, IconPlusOutline16, IconRefreshOutline14, IconTrashOutline16, Modal, Tooltip,
+  IconFolderOpenOutline16, IconPlusOutline16, IconRefreshOutline14, IconSkillOutline16, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { modalStaggerClass } from '../../modal-animation'
 import { PshBody, PshHead, PopoverShell, type PopoverAnchor } from '../../popover-shell'
@@ -72,6 +72,8 @@ const SKILL_ZH: Record<string, string> = {
   presetDefaultTag: '默认',
   presetOverrideCount: '{n} 项单独设置',
   presetLockedByGlobal: '「全部 Agent」层已禁用，预设层无法打开',
+  // 卡片（Skills Hub 风格）文案
+  copySkillName: '复制技能名', copiedSkillName: '已复制', toolsLabel: '工具', scopeAll: '全局', tagLoose: '散装',
 }
 
 function skillT(key: string, params?: Record<string, string | number>): string {
@@ -247,6 +249,25 @@ const css = {
   skillExpand: 'skm-skill-expand',
   skillCount: 'skm-skill-count',
   skillCompat: 'skm-skill-compat',
+  // 技能卡片（Skills Hub 风格）
+  skillGrid: 'skm-skill-grid',
+  skillCard: 'skm-skill-card',
+  skillCardHead: 'skm-skill-card-head',
+  skillIcon: 'skm-skill-icon',
+  skillTitleWrap: 'skm-skill-title-wrap',
+  skillTitle: 'skm-skill-title',
+  skillCopy: 'skm-skill-copy',
+  skillCardToggle: 'skm-skill-card-toggle',
+  skillDesc: 'skm-skill-card-desc',
+  skillTags: 'skm-skill-tags',
+  tag: 'skm-tag',
+  tagSource: 'skm-tag-source',
+  tagScope: 'skm-tag-scope',
+  skillMeta: 'skm-skill-meta',
+  skillCardFoot: 'skm-skill-card-foot',
+  skillFootLabel: 'skm-skill-foot-label',
+  skillFootIcon: 'skm-skill-foot-icon',
+  skillCardActions: 'skm-skill-card-actions',
   skillFiles: 'skm-skill-files',
   skillFile: 'skm-skill-file',
   skillPreview: 'skm-skill-preview',
@@ -313,16 +334,50 @@ const SHEET = `
 .skm-failure p{margin:2px;font-size:13px;line-height:20px;color:var(--dsw-alias-state-error-primary,#e0434b)}
 .skm-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary,#e0434b)}
 .skm-bundle-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
-.skm-bundle{display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:10px;overflow:hidden;background:var(--dsw-alias-bg-layer-1,#1c1f26)}
-.skm-bundle-row{flex:1;min-width:0;display:inline-flex;align-items:center;gap:8px;appearance:none;border:none;background:transparent;padding:8px 10px;font-size:13px;cursor:pointer;color:var(--dsw-alias-label-primary,#eee)}
-.skm-bundle-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
-.skm-bundle-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-.skm-bundle-count{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary,#888)}
+.skm-bundle{display:flex;flex-wrap:wrap;align-items:center;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));border-radius:14px;overflow:hidden;background:var(--dsw-alias-bg-base,#fff);box-shadow:0 1px 2px rgba(16,24,40,.03);transition:border-color 160ms ease,box-shadow 160ms ease}
+.skm-bundle:hover{border-color:var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
+.skm-bundle-row{flex:1;min-width:0;display:inline-flex;align-items:center;gap:8px;appearance:none;border:none;background:transparent;padding:10px 10px 10px 4px;font-size:13px;cursor:pointer;color:var(--dsw-alias-label-primary,#0f1115);font-family:inherit}
+.skm-bundle-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.03))}
+.skm-bundle-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.skm-bundle-count{flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#61666b);background:var(--dsw-alias-bg-module-platform,#f1f3f5);border-radius:999px;padding:0 8px;white-space:nowrap}
 .skm-chevron{flex:none;margin-left:auto;color:var(--dsw-alias-label-tertiary,#888);transition:transform 120ms}
 .skm-bundle[data-open='true'] .skm-chevron{transform:rotate(180deg)}
 .skm-bundle-actions{margin-left:auto;display:flex;align-items:center;gap:2px;padding-right:6px}
-.skm-icon-action{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:50%;padding:0;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary,#888)}
-.skm-icon-action:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));color:var(--dsw-alias-label-primary,#eee)}
+.skm-icon-action{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:50%;padding:0;background:transparent;cursor:pointer;color:var(--dsw-alias-label-tertiary,#888);transition:background 140ms ease,color 140ms ease,transform 140ms ease}
+.skm-icon-action:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05));color:var(--dsw-alias-label-primary,#0f1115)}
+.skm-icon-action:active{transform:scale(.9)}
+
+/* ── 技能卡片（Skills Hub 风格）：单列大卡片，宽约 660px、高约 2 倍于紧凑行 ── */
+.skm-skill-grid{list-style:none;margin:0;padding:2px 12px 12px;width:100%;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;box-sizing:border-box}
+.skm-skill-grid > .skm-status{grid-column:1/-1;padding-top:4px}
+.skm-skill-card{position:relative;min-width:0;display:flex;flex-direction:column;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:16px;background:var(--dsw-alias-bg-base,#fff);padding:14px 16px 0;overflow:hidden;opacity:0;animation:skm-card-in 260ms cubic-bezier(.2,.7,.3,1.06) forwards;animation-delay:calc(var(--skm-i,0)*40ms);transition:border-color 160ms ease,box-shadow 160ms ease,transform 160ms ease}
+.skm-skill-card:hover{border-color:var(--dsw-alias-border-l3,rgba(0,0,0,.16));box-shadow:0 3px 14px rgba(16,24,40,.08);transform:translateY(-1px)}
+@keyframes skm-card-in{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+.skm-skill-card-head{display:flex;align-items:center;gap:10px;min-width:0}
+.skm-skill-icon{flex:none;width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));border-radius:12px;background:var(--dsw-alias-bg-module-platform,#f5f6f7);color:var(--dsw-alias-label-secondary,#61666b);transition:color 160ms ease,border-color 160ms ease,transform 160ms ease}
+.skm-skill-card:hover .skm-skill-icon{color:var(--dsw-alias-label-primary,#0f1115);border-color:var(--dsw-alias-border-l3,rgba(0,0,0,.14));transform:scale(1.05)}
+.skm-skill-title-wrap{flex:1;min-width:0;display:flex;align-items:center;gap:6px}
+.skm-skill-title{flex:1;min-width:0;font-size:15px;font-weight:600;line-height:22px;color:var(--dsw-alias-label-primary,#0f1115);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.skm-skill-copy{flex:none;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:none;border-radius:6px;padding:0;background:transparent;cursor:pointer;color:var(--dsw-alias-label-caption,#adb2b8);opacity:.55;transition:opacity 140ms ease,color 140ms ease,background 140ms ease,transform 140ms ease}
+.skm-skill-copy:hover{opacity:1;color:var(--dsw-alias-label-secondary,#61666b);background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));transform:scale(1.08)}
+.skm-skill-copy:active{transform:scale(.9)}
+.skm-skill-copy[data-copied='true']{opacity:1;color:var(--dsw-alias-state-success-primary,#22c55e)}
+.skm-skill-card-toggle{flex:none;display:inline-flex;align-items:center}
+.skm-skill-card-desc{margin:8px 0 0;font-size:13px;line-height:19px;color:var(--dsw-alias-label-tertiary,#81858c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.skm-skill-tags{display:flex;align-items:center;gap:8px;margin-top:12px;min-width:0}
+.skm-tag{flex:none;display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;font-size:12px;line-height:20px;box-sizing:border-box;white-space:nowrap;transition:color 160ms ease,border-color 160ms ease,background 160ms ease}
+.skm-tag-source{background:var(--dsw-alias-bg-module-platform,#f1f3f5);color:var(--dsw-alias-label-secondary,#61666b)}
+.skm-tag-scope{border:1px solid var(--dsw-alias-state-success-primary,#22c55e);color:var(--dsw-alias-state-success-primary,#22c55e);background:transparent}
+.skm-tag-scope[data-off='true']{border-color:var(--dsw-alias-border-l2,rgba(0,0,0,.12));color:var(--dsw-alias-label-tertiary,#81858c)}
+.skm-skill-meta{margin-left:auto;flex:none;font-size:12px;line-height:17px;color:var(--dsw-alias-label-caption,#adb2b8);white-space:nowrap}
+.skm-skill-card-foot{display:flex;align-items:center;gap:6px;margin:12px -16px 0;padding:8px 14px 8px 16px;border-top:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06))}
+.skm-skill-foot-label{flex:none;font-size:12px;line-height:17px;color:var(--dsw-alias-label-caption,#adb2b8)}
+.skm-skill-foot-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;border-radius:8px;padding:0;background:transparent;cursor:pointer;color:var(--dsw-alias-label-secondary,#61666b);transition:background 140ms ease,color 140ms ease,transform 140ms ease}
+.skm-skill-foot-icon:hover{background:var(--dsw-alias-interactive-bg-hover-solid,#f1f3f5);color:var(--dsw-alias-label-primary,#0f1115);transform:scale(1.05)}
+.skm-skill-foot-icon:active{transform:scale(.92)}
+.skm-skill-foot-icon:disabled{opacity:.38;cursor:default}
+.skm-skill-foot-icon:disabled:hover{background:transparent;color:var(--dsw-alias-label-secondary,#61666b);transform:none}
+.skm-skill-card-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
 .skm-skill-list{list-style:none;margin:0;padding:2px 6px 6px;width:100%;display:flex;flex-direction:column;gap:2px}
 .skm-skill-item{display:flex;flex-direction:column;gap:2px;padding:2px 0;border-radius:8px}
 .skm-skill-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
@@ -375,15 +430,17 @@ const SHEET = `
 .skm-loose-empty{margin:2px;padding:4px 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#888)}
 .skm-visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
-/* ── 技能/技能包开关（对齐官方开关样式） ─────────────────────── */
-.skm-toggle{flex:none;display:inline-flex;align-items:center;width:28px;height:16px;box-sizing:border-box;border-radius:8px;padding:2px;appearance:none;border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.12));background:var(--dsw-alias-bg-base,#0e1116);cursor:pointer;transition:background 120ms,border-color 120ms}
-.skm-toggle:hover{filter:brightness(1.15)}
-.skm-toggle-on{border-color:transparent;background:var(--dsw-alias-state-business-primary,#4a9eff)}
-.skm-toggle-off{background:var(--dsw-alias-bg-layer-2,#262b36);border-color:var(--dsw-alias-border-l2,rgba(255,255,255,.14))}
-.skm-toggle-knob{display:block;width:10px;height:10px;border-radius:50%;background:var(--dsw-alias-label-tertiary,#888);transition:transform 120ms,background 120ms}
-.skm-toggle-on .skm-toggle-knob{transform:translateX(12px);background:var(--dsw-alias-label-primary,#fff)}
-.skm-toggle-off .skm-toggle-knob{transform:translateX(0);background:var(--dsw-alias-label-tertiary,#888)}
-.skm-bundle-toggle{flex:none;display:inline-flex;align-items:center;gap:4px;margin-right:6px}
+/* ── 技能/技能包开关（Skills Hub 风格：绿色胶囊 + 白色圆钮，回弹过渡） ── */
+.skm-toggle{flex:none;display:inline-flex;align-items:center;width:34px;height:20px;box-sizing:border-box;border-radius:10px;padding:2px;appearance:none;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));background:var(--dsw-alias-bg-module-platform,#e9ebee);cursor:pointer;transition:background 160ms ease,border-color 160ms ease,filter 160ms ease}
+.skm-toggle:hover{filter:brightness(1.03)}
+.skm-toggle:disabled{opacity:.55;cursor:not-allowed;filter:none}
+.skm-toggle:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px}
+.skm-toggle-on{border-color:transparent;background:var(--dsw-alias-state-success-primary,#22c55e)}
+.skm-toggle-off{background:var(--dsw-alias-bg-module-platform,#e9ebee);border-color:var(--dsw-alias-border-l2,rgba(0,0,0,.1))}
+.skm-toggle-knob{display:block;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform 180ms cubic-bezier(.3,1.4,.5,1)}
+.skm-toggle-on .skm-toggle-knob{transform:translateX(14px)}
+.skm-toggle-off .skm-toggle-knob{transform:translateX(0)}
+.skm-bundle-toggle{flex:none;display:inline-flex;align-items:center;gap:4px;margin-left:8px}
 
 /* ── Agent 预设分类圆球条 ─────────────────────────────────────── */
 .skm-preset-strip{flex:none;display:flex;align-items:flex-start;gap:14px;padding:2px 2px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
@@ -406,6 +463,17 @@ const SHEET = `
   .skm-viewer-layout{flex-direction:column}
   .skm-viewer-nav{width:100%;border-right:none;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));flex:none;max-height:40%}
   .skm-viewer-content{flex:1;min-height:0}
+  /* 窄视口：技能卡片网格退成单列，保证卡片可读。 */
+  .skm-skill-grid{grid-template-columns:minmax(0,1fr)}
+}
+
+/* ── 减弱动效：卡片入场/悬停位移与开关回弹全部收敛 ───────────── */
+@media (prefers-reduced-motion: reduce) {
+  .skm-skill-card{animation:none;opacity:1;transition:none}
+  .skm-toggle-knob{transition:none}
+  .skm-toggle{transition:none}
+  .skm-tag{transition:none}
+  .skm-skill-copy,.skm-skill-icon,.skm-skill-foot-icon,.skm-icon-action,.skm-bundle{transition:none}
 }
 `
 
@@ -598,13 +666,44 @@ function skillFileRows(files: string[]): ViewRow[] {
   return rows
 }
 
-/** 技能行：开关 + 查看按钮 + 名称/描述 + 文件数 + compatibility + （可选）移除/归入按钮。 */
-function SkillRowItem({ skill, bundleId, enabled, lockedReason, onToggle, onView, onAssign, onRemove, onDelete }: {
+/** 复制图标（Feather copy，线性描边，与导航手绘图标同风）。 */
+function CopyIcon(): JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+/** 完成勾图标（Feather check）。 */
+function CheckIcon(): JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  )
+}
+
+/**
+ * 技能卡片（Skills Hub 风格）：
+ *   [图标瓷片] 标题(粗)  [复制钮]      [绿色开关]
+ *   描述一行（省略号）
+ *   [来源 pill][作用域 pill]        N 文件
+ *   ────────────────────────────
+ *   工具  [查看]  [查看文件按钮]   [归入/移出] [删除]
+ */
+function SkillCard({ skill, bundleId, bundleName, enabled, lockedReason, scopeLabel, index, onToggle, onView, onAssign, onRemove, onDelete }: {
   skill: SkillInfo
   bundleId: string | null
+  bundleName: string | null
   enabled: boolean
   /** 非空时开关被锁住（如：全局层已禁用，预设层无法打开），并显示原因。 */
   lockedReason?: string
+  /** 当前作用域 pill 文案（「全部 Agent」= 全局）。 */
+  scopeLabel: string
+  /** 网格序号：入场错峰动画延时。 */
+  index: number
   onToggle: (skill: SkillInfo, enabled: boolean) => void
   onView: (skill: SkillInfo) => void
   onAssign?: (skill: SkillInfo) => void
@@ -613,72 +712,127 @@ function SkillRowItem({ skill, bundleId, enabled, lockedReason, onToggle, onView
 }): JSX.Element {
   const files = Array.isArray(skill.files) ? skill.files : []
   const description = skill.description ?? ''
-  const head: ReactNode[] = []
-  head.push(
-    <button
-      key="toggle"
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      aria-label={lockedReason ?? (enabled ? skillT('disableSkill') : skillT('enableSkill'))}
-      title={lockedReason ?? (enabled ? skillT('disableSkill') : skillT('enableSkill'))}
-      className={`${css.toggle} ${enabled ? css.toggleOn : css.toggleOff}`}
-      disabled={lockedReason !== undefined}
-      onClick={(event) => {
-        event.stopPropagation()
-        onToggle(skill, !enabled)
-      }}
-    >
-      <span className={css.toggleKnob} aria-hidden="true" />
-    </button>,
-  )
-  if (files.length > 0) {
-    head.push(
-      <button key="view" type="button" className={css.skillExpand}
-        aria-label={skillT('viewSkillFiles')} aria-expanded={false} onClick={() => { onView(skill) }}>
-        <IconFolderOpenOutline16 size={14} aria-hidden="true" />
-      </button>,
-    )
+  const [copied, setCopied] = useState(false)
+  const copiedTimer = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current)
+  }, [])
+
+  const flashCopied = (): void => {
+    setCopied(true)
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current)
+    copiedTimer.current = window.setTimeout(() => { setCopied(false) }, 1200)
   }
-  head.push(
-    <span key="label" className={css.skillLabel} title={description}>
-      <span className={css.skillName}>{skill.name}</span>
-      {description !== '' && <span className={css.skillDescription}>{description}</span>}
-    </span>,
-  )
-  if (typeof skill.fileCount === 'number') {
-    head.push(<span key="count" className={css.skillCount}>{skillT('fileCount', { n: skill.fileCount })}</span>)
+  /** 复制技能名：主用 clipboard API，回退一个隐藏 textarea + execCommand。 */
+  const copyName = (): void => {
+    const fallback = (): void => {
+      try {
+        const textarea = document.createElement('textarea')
+        textarea.value = skill.name
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      } catch {
+        /* 复制失败静默：按钮仍给出已复制反馈，无副作用。 */
+      }
+    }
+    try {
+      if (navigator.clipboard !== undefined) {
+        void navigator.clipboard.writeText(skill.name).then(flashCopied, () => { fallback(); flashCopied() })
+      } else {
+        fallback()
+        flashCopied()
+      }
+    } catch {
+      fallback()
+      flashCopied()
+    }
   }
-  if ((skill.compatibility ?? '') !== '') {
-    head.push(<span key="compat" className={css.skillCompat} title={skill.compatibility}>{skill.compatibility}</span>)
-  }
-  if (bundleId !== null) {
-    head.push(
-      <Tooltip key="remove" label={skillT('removeSkill')} side="bottom" delayMs={500}>
-        <button type="button" className={css.iconAction} aria-label={skillT('removeSkill')} onClick={() => { onRemove?.(skill) }}>
-          <IconCloseOutline16 size={14} />
-        </button>
-      </Tooltip>,
-    )
-  } else {
-    head.push(
-      <Tooltip key="assign" label={skillT('assignToBundle')} side="bottom" delayMs={500}>
-        <button type="button" className={css.iconAction} aria-label={skillT('assignToBundle')} onClick={() => { onAssign?.(skill) }}>
-          <IconPlusOutline16 size={14} />
-        </button>
-      </Tooltip>,
-    )
-  }
-  head.push(
-    <Tooltip key="delete" label={skillT('deleteSkillBtn')} side="bottom" delayMs={500}>
-      <button type="button" className={css.iconAction} aria-label={skillT('deleteSkillBtn')} onClick={() => { onDelete?.(skill) }}>
-        <IconTrashOutline16 size={14} />
-      </button>
-    </Tooltip>,
-  )
+
+  const toggleLabel = lockedReason ?? (enabled ? skillT('disableSkill') : skillT('enableSkill'))
+  const fileMeta = typeof skill.fileCount === 'number' ? skill.fileCount : files.length
   return (
-    <li className={css.skillItem}>
-      <div className={css.skillRow}>{head}</div>
+    <li
+      className={css.skillCard}
+      style={{ '--skm-i': index } as CSSProperties}
+    >
+      <div className={css.skillCardHead}>
+        <span className={css.skillIcon} aria-hidden="true"><IconSkillOutline16 size={20} /></span>
+        <span className={css.skillTitleWrap}>
+          <span className={css.skillTitle} title={skill.name}>{skill.name}</span>
+          <button
+            type="button"
+            className={css.skillCopy}
+            data-copied={copied ? 'true' : undefined}
+            aria-label={copied ? skillT('copiedSkillName') : skillT('copySkillName')}
+            title={copied ? skillT('copiedSkillName') : skillT('copySkillName')}
+            onClick={copyName}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
+        </span>
+        <span className={css.skillCardToggle}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label={toggleLabel}
+            title={toggleLabel}
+            className={`${css.toggle} ${enabled ? css.toggleOn : css.toggleOff}`}
+            disabled={lockedReason !== undefined}
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggle(skill, !enabled)
+            }}
+          >
+            <span className={css.toggleKnob} aria-hidden="true" />
+          </button>
+        </span>
+      </div>
+      {description !== '' && (
+        <p className={css.skillDesc} title={description}>{description}</p>
+      )}
+      <div className={css.skillTags}>
+        <span className={`${css.tag} ${css.tagSource}`}>{bundleName ?? skillT('tagLoose')}</span>
+        <span className={`${css.tag} ${css.tagScope}`} data-off={enabled ? undefined : 'true'}>{scopeLabel}</span>
+        <span className={css.skillMeta}>{skillT('fileCount', { n: fileMeta })}</span>
+      </div>
+      <div className={css.skillCardFoot}>
+        <span className={css.skillFootLabel}>{skillT('toolsLabel')}</span>
+        <button
+          type="button"
+          className={css.skillFootIcon}
+          aria-label={skillT('viewSkillFiles')}
+          title={skillT('viewSkillFiles')}
+          disabled={files.length === 0}
+          onClick={() => { onView(skill) }}
+        >
+          <IconFolderOpenOutline16 size={14} aria-hidden="true" />
+        </button>
+        <div className={css.skillCardActions}>
+          {bundleId !== null ? (
+            <Tooltip label={skillT('removeSkill')} side="bottom" delayMs={500}>
+              <button type="button" className={css.iconAction} aria-label={skillT('removeSkill')} onClick={() => { onRemove?.(skill) }}>
+                <IconCloseOutline16 size={14} />
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip label={skillT('assignToBundle')} side="bottom" delayMs={500}>
+              <button type="button" className={css.iconAction} aria-label={skillT('assignToBundle')} onClick={() => { onAssign?.(skill) }}>
+                <IconPlusOutline16 size={14} />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip label={skillT('deleteSkillBtn')} side="bottom" delayMs={500}>
+            <button type="button" className={css.iconAction} aria-label={skillT('deleteSkillBtn')} onClick={() => { onDelete?.(skill) }}>
+              <IconTrashOutline16 size={14} />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
     </li>
   )
 }
@@ -1058,6 +1212,10 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
 
   const bundles = state.status === 'ready' ? state.snapshot.bundles : []
   const loose = state.status === 'ready' ? state.snapshot.loose : []
+  /** 当前作用域 pill 文案：「全部 Agent」视图 = 全局（Global），预设视图 = 预设名。 */
+  const scopeLabel = activePreset === ALL_PRESETS
+    ? t('scopeAll')
+    : (presets.find((preset) => preset.id === activePreset)?.name ?? activePreset)
   const trimmedName = installName.trim()
   const nameInvalid = trimmedName !== '' && !SKILL_NAME_PATTERN.test(trimmedName)
 
@@ -1080,7 +1238,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
       anchor={anchor}
       onCardMouseEnter={onCardMouseEnter}
       onCardMouseLeave={onCardMouseLeave}
-      width={620}
+      width={700}
       ariaLabel={t('panelTitle')}
     >
       <PshHead
@@ -1300,13 +1458,15 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                         </form>
                       )}
                       {open2 && (
-                        <ul className={css.skillList}>
+                        <ul className={css.skillGrid}>
                           {bundle.skills.length === 0 ? (
                             <li className={css.status}>{t('bundleNoSkills')}</li>
-                          ) : bundle.skills.map((skill) => (
-                            <SkillRowItem key={skill.name} skill={skill} bundleId={bundle.id}
+                          ) : bundle.skills.map((skill, index) => (
+                            <SkillCard key={skill.name} skill={skill} bundleId={bundle.id} bundleName={bundle.name}
                               enabled={skillEnabledIn(skill.name)}
                               lockedReason={skillLockedReason(skill.name)}
+                              scopeLabel={scopeLabel}
+                              index={index}
                               onToggle={toggleSkill}
                               onView={openViewer}
                               onRemove={(s) => { void removeFromBundle(bundle.id, s.name) }}
@@ -1324,11 +1484,13 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
             {loose.length === 0 ? (
               <p className={css.looseEmpty}>{t('looseEmpty')}</p>
             ) : (
-              <ul className={css.skillList}>
-                {loose.map((skill) => (
-                  <SkillRowItem key={skill.name} skill={skill} bundleId={null}
+              <ul className={css.skillGrid}>
+                {loose.map((skill, index) => (
+                  <SkillCard key={skill.name} skill={skill} bundleId={null} bundleName={null}
                     enabled={skillEnabledIn(skill.name)}
                     lockedReason={skillLockedReason(skill.name)}
+                    scopeLabel={scopeLabel}
+                    index={index}
                     onToggle={toggleSkill}
                     onView={openViewer}
                     onAssign={(s) => { setAssignTarget(s) }}
