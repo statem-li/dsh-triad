@@ -77,7 +77,7 @@ const SKILL_ZH: Record<string, string> = {
   // Skills Hub 页面文案
   hubSubtitle: 'Skill 同步工作区', hubWorkspace: '工作区', hubManage: '管理',
   hubMySkills: '我的技能', hubAddSkills: '添加技能', hubBundles: '技能包', hubPresets: 'Agent 预设', hubLoose: '散装技能',
-  statManaged: '管理的技能', statEnabled: '全局启用', statLoose: '散装技能', statSync: '同步状态', statHealthy: '全部健康',
+  statManaged: '管理的技能', statEnabled: '全局启用', statLoose: '散装技能', statSync: '技能健康', statHealthy: '全部健康',
   statChecking: '检测中…', statIssues: '{n} 个问题', statUnknown: '检测失败', statPending: '待检测',
   searchPlaceholder: '搜索技能…', filterAll: '全部', filterBundles: '技能包', filterLoose: '散装技能', sortLabel: '名称',
   bulk: '批量', bulkEnableAll: '全部启用', bulkDisableAll: '全部禁用', presetSelect: 'Agent 预设', viewList: '列表', viewGrid: '网格',
