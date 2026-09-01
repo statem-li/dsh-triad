@@ -19,6 +19,25 @@ const GAP = 6
 /** tooltip 距离格子顶部的间隔（px）。 */
 const TIP_GAP = 8
 
+/** 色阶（0-9，数值越大越靠紫端）与分级函数，供月历等复用同一套热力配色。 */
+export const heatPalette = [
+  '#12314f', '#19466f', '#215d94', '#2a75b8', '#398dda',
+  '#4f8cff', '#6fa0ff', '#8d7bff', '#ad66ff',
+]
+/** 对数分级：0 = 无用量；其余按 10 的幂次切档（1..9）。 */
+export function heatLevel(v: number): number {
+  if (v <= 0) return 0
+  if (v < 100) return 1
+  if (v < 1000) return 2
+  if (v < 10000) return 3
+  if (v < 100000) return 4
+  if (v < 1000000) return 5
+  if (v < 10000000) return 6
+  if (v < 100000000) return 7
+  if (v < 1000000000) return 8
+  return 9
+}
+
 interface HoverState { cell: HeatCell; left: number; top: number }
 
 export function Heatmap({ cells, onSelect, rows = 5, cellText = 'value' }: {
@@ -29,31 +48,12 @@ export function Heatmap({ cells, onSelect, rows = 5, cellText = 'value' }: {
   cellText?: 'value' | 'label' | 'both'
 }): JSX.Element {
   const [hover, setHover] = useState<HoverState | null>(null)
-  const levels = (v: number): number => {
-    if (v <= 0) return 0
-    if (v < 100) return 1
-    if (v < 1000) return 2
-    if (v < 10000) return 3
-    if (v < 100000) return 4
-    if (v < 1000000) return 5
-    if (v < 10000000) return 6
-    if (v < 100000000) return 7
-    if (v < 1000000000) return 8
-    return 9
-  }
-  const colors = [
-    'var(--dsw-alias-border-l2)',
-    '#12314f', '#19466f', '#215d94', '#2a75b8', '#398dda',
-    '#4f8cff', '#6fa0ff', '#8d7bff', '#ad66ff',
-  ]
-  // 列数由「每行格子数（rows 行）向上取整」决定，列宽 1fr 自适应摊满容器宽度；
-  // 不设 maxWidth 上限——上限会让 grid 窄于卡片内容区，右侧留大片空白。
   const cols = Math.max(1, Math.ceil(cells.length / rows))
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: GAP, width: '100%' }}>
         {cells.map(c => {
-          const idx = Math.min(9, levels(c.value))
+          const idx = Math.min(9, heatLevel(c.value))
           return (
             <div key={c.key}
               onMouseEnter={(e) => {
@@ -62,7 +62,7 @@ export function Heatmap({ cells, onSelect, rows = 5, cellText = 'value' }: {
               }}
               onMouseLeave={() => setHover(null)}
               onClick={() => onSelect?.(c)}
-              style={{ aspectRatio: '1', minWidth: 0, borderRadius: 6, background: colors[idx], cursor: onSelect ? 'pointer' : 'default', opacity: c.value > 0 ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+              style={{ aspectRatio: '1', minWidth: 0, borderRadius: 6, background: idx === 0 ? 'var(--dsw-alias-border-l2)' : heatPalette[idx - 1], cursor: onSelect ? 'pointer' : 'default', opacity: c.value > 0 ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, minWidth: 0 }}>
                 {(cellText === 'label' || cellText === 'both') && (

@@ -1,21 +1,23 @@
 /**
- * UsageTab — 明细 tab（Skills Hub 风格）。
+ * UsageTab — 明细 tab（按视觉稿重构）。
  *
- * 统计行（范围合计/模型数/活跃天数/平均命中率，宽卡 + 悬浮 desc + 点击展开）
- * + 工具栏（供应商/模型搜索、排序下拉）+ 内容区：Token 活动热力、月/年热力、
- * 模型消耗排行、每日明细表（搜索命中时按「天 × 模型」展开）。
+ * 四张 KPI 卡（范围合计带精确值副行 / 模型数 / 活跃天数 / 平均命中率，后三张
+ * 带「较昨日」涨跌副行）+ 工具栏（搜索 + 指标下拉）+ 内容区：
+ * Token 活动 52 周滚动热力（每周/累计口径 + 月份/星期标签）、月热力（日用量）+
+ * 年热力（每月汇总）、当日模型明细、模型消耗排行、每日明细表，底部热力图说明。
  */
 
 import { useEffect, useState } from 'react'
 import { usageApi } from './api'
 import { averageCacheHitRate, modelRank, splitModelKey, sumTokens, type UsageDay } from './aggregate'
-import { filterDays, type DateRange } from './range'
-import { formatHitRate, formatUnits } from './format'
+import { filterDays, fromDayStr, toDayStr, type DateRange } from './range'
+import { formatExact, formatHitRate, formatUnits } from './format'
 import { RankBars } from './charts/RankBars'
 import { Heatmap } from './charts/Heatmap'
+import { MonthCalendar, type MonthCell } from './charts/MonthCalendar'
 import { ErrorCard } from './primitives/ErrorCard'
 import { useIsMobile } from '../../responsive'
-import { ActivityGrid, type ActivityMode } from './ActivityGrid'
+import { ActivityGrid, type ActivityMetric, type ActivityMode, METRIC_LABELS, metricValueOf } from './ActivityGrid'
 import { modalStaggerClass } from '../../modal-animation'
 import { css, HubStat, HubStatDetail, HubSection, modelsIcon, daysIcon, hitIcon, tokensIcon } from './hub'
 
@@ -72,7 +74,7 @@ function CardHead({ name, meta }: { name: string; meta?: string }): JSX.Element 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <span style={{ fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' }}>{name}</span>
-      {meta !== undefined && <span style={{ marginLeft: 'auto', fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>{meta}</span>}
+      {meta !== undefined && <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>{meta}</span>}
     </div>
   )
 }
@@ -143,16 +145,76 @@ function buildDetailRows(days: UsageDay[], query: string): DetailRow[] {
   return rows
 }
 
-type SortKey = 'total' | 'name'
+/** 按供应商/模型搜索过滤后的日数据（用于热力区域；未命中模型天记零值）。 */
+function filterUsageByQuery(days: UsageDay[], query: string): UsageDay[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return days
+  return days.map(d => {
+    const matched = (d.models ?? []).filter(m => {
+      const { provider, model } = splitModelKey(m.model)
+      return provider.toLowerCase().includes(q) || model.toLowerCase().includes(q)
+    })
+    let input = 0
+    let output = 0
+    let cacheRead = 0
+    let cacheWrite = 0
+    for (const m of matched) {
+      input += m.inputTokens ?? 0
+      output += m.outputTokens ?? 0
+      cacheRead += m.cacheReadTokens ?? 0
+      cacheWrite += m.cacheWriteTokens ?? 0
+    }
+    const prompt = input + cacheRead + cacheWrite
+    return {
+      ...d,
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+      tokens: input + output + cacheRead + cacheWrite,
+      cacheHitRate: prompt > 0 ? (cacheRead / prompt) * 100 : (d.cacheHitRate ?? 0),
+      models: matched,
+    }
+  })
+}
+
+/** 一天内的不同模型数（模型明细为空时 = 0）。 */
+function distinctModels(day: UsageDay | undefined): number {
+  return day === undefined ? 0 : (day.models?.length ?? 0)
+}
+
+/** 「较昨日」副行：count 口径（+N / N / 0）。 */
+function deltaSubCount(delta: number | null): { text: string; tone: 'up' | 'down' | 'flat' } {
+  if (delta === null) return { text: '较昨日 —', tone: 'flat' }
+  if (delta > 0) return { text: `较昨日 +${delta}`, tone: 'up' }
+  if (delta < 0) return { text: `较昨日 ${delta}`, tone: 'down' }
+  return { text: '较昨日 0', tone: 'flat' }
+}
+
+/** 「较昨日」副行：百分比口径（↑/↓ x.xx%）。 */
+function deltaSubPercent(delta: number | null): { text: string; tone: 'up' | 'down' | 'flat' } {
+  if (delta === null) return { text: '较昨日 —', tone: 'flat' }
+  if (delta > 0) return { text: `较昨日 ↑ ${delta.toFixed(2)}%`, tone: 'up' }
+  if (delta < 0) return { text: `较昨日 ↓ ${Math.abs(delta).toFixed(2)}%`, tone: 'down' }
+  return { text: '较昨日 0.00%', tone: 'flat' }
+}
+
+/** 指标下拉选项。 */
+const METRIC_OPTIONS: Array<{ id: ActivityMetric; label: string }> = [
+  { id: 'tokens', label: '用量' },
+  { id: 'input', label: '输入' },
+  { id: 'output', label: '输出' },
+  { id: 'cache', label: '缓存' },
+  { id: 'requests', label: '调用次数' },
+]
 
 export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX.Element {
   const [usage, setUsage] = useState<UsageDay[] | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [activityMode, setActivityMode] = useState<ActivityMode>('day')
+  const [metric, setMetric] = useState<ActivityMetric>('tokens')
   const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('total')
-  const [sortAsc, setSortAsc] = useState(false)
-  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+  const [metricMenuOpen, setMetricMenuOpen] = useState(false)
   const [openStat, setOpenStat] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [retryTick, setRetryTick] = useState(0)
@@ -181,43 +243,61 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
   const month = now.getMonth() + 1
   const monthPrefix = `${year}-${String(month).padStart(2, '0')}`
 
-  const filtered = filterDays(usage, range)
+  const filtered = [...filterDays(usage, range)].sort((a, b) => a.date.localeCompare(b.date))
   const filteredSorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date))
 
   const modelRankData = modelRank(filtered).map(row => {
     const { provider, model } = splitModelKey(row.label)
     return { ...row, provider, model: model === provider ? row.label : model }
   })
-  const sortedRank = [...modelRankData].sort((a, b) => {
-    if (sortKey === 'total') return sortAsc ? a.value - b.value : b.value - a.value
-    const order = a.label.localeCompare(b.label)
-    return sortAsc ? order : -order
-  })
+  const sortedRank = modelRankData
 
   const detailRows = buildDetailRows(filteredSorted, query)
   const searching = query.trim() !== ''
   const inRangeSum = sumTokens(filtered)
   const hitRate = averageCacheHitRate(filtered)
 
-  const monthDays = usage.filter(d => d.date.startsWith(monthPrefix))
+  // ── KPI「较昨日」：范围最后一天 vs 前一天 ──
+  const usageByDate = new Map<string, UsageDay>()
+  for (const d of usage) usageByDate.set(d.date, d)
+  const lastDay = filtered.length > 0 ? filtered[filtered.length - 1] : null
+  const prevDay = lastDay === null ? undefined : usageByDate.get(toDayStr(new Date(fromDayStr(lastDay.date).getTime() - 86_400_000)))
+  const modelsDelta = lastDay === null ? null : distinctModels(lastDay) - distinctModels(prevDay)
+  const activeDelta = lastDay === null ? null : ((lastDay.tokens ?? 0) > 0 ? 1 : 0) - ((prevDay?.tokens ?? 0) > 0 ? 1 : 0)
+  const hitDelta = lastDay === null || prevDay === undefined || lastDay.cacheHitRate == null || prevDay.cacheHitRate == null
+    ? null
+    : lastDay.cacheHitRate - prevDay.cacheHitRate
+  const modelsSub = deltaSubCount(modelsDelta)
+  const activeSub = deltaSubCount(activeDelta)
+  const hitSub = deltaSubPercent(hitDelta)
+
+  // ── 热力数据（随搜索与指标） ──
+  const heatDays = filterUsageByQuery(usage, query)
   const daysInMonth = new Date(year, month, 0).getDate()
-  const monthCells = Array.from({ length: daysInMonth }, (_, i) => {
+  const monthCells: MonthCell[] = Array.from({ length: daysInMonth }, (_, i) => {
     const dateStr = `${monthPrefix}-${String(i + 1).padStart(2, '0')}`
-    const hit = monthDays.find(d => d.date === dateStr)
+    const hit = heatDays.find(d => d.date === dateStr)
     return {
-      key: dateStr, label: dateStr, short: String(i + 1), value: hit?.tokens ?? 0,
+      key: dateStr,
+      day: i + 1,
+      value: metricValueOf(hit, metric),
       input: hit?.inputTokens ?? 0,
       output: hit?.outputTokens ?? 0,
-      cache: hit ? (hit.cacheReadTokens ?? 0) + (hit.cacheWriteTokens ?? 0) : 0,
-      hitRate: hit?.cacheHitRate,
+      cache: (hit?.cacheReadTokens ?? 0) + (hit?.cacheWriteTokens ?? 0),
+      hitRate: hit?.cacheHitRate ?? null,
     }
   })
   const yearCells = Array.from({ length: 12 }, (_, i) => {
     const key = `${year}-${String(i + 1).padStart(2, '0')}`
-    const days = usage.filter(d => d.date.startsWith(key))
+    const days = heatDays.filter(d => d.date.startsWith(key))
     const sum = sumTokens(days)
+    const value = metric === 'tokens' ? sum.total
+      : metric === 'input' ? sum.input
+        : metric === 'output' ? sum.output
+          : metric === 'cache' ? sum.cache
+            : days.reduce((acc, d) => acc + (d.requests ?? 0), 0)
     return {
-      key, label: `${i + 1} 月`, short: `${i + 1}月`, value: sum.total,
+      key, label: `${i + 1} 月`, short: `${i + 1}月`, value,
       input: sum.input,
       output: sum.output,
       cache: sum.cache,
@@ -229,13 +309,14 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
 
   return (
     <>
-      {/* ── 统计行 ── */}
+      {/* ── KPI 统计行（范围合计/模型数/活跃天数/平均命中率 + 较昨日） ── */}
       <div className={css.statsRow}>
         <HubStat
           tone="blue"
           icon={tokensIcon(18)}
           label="范围合计"
           value={formatUnits(inRangeSum.total)}
+          sub={<span>≈ {formatExact(inRangeSum.total)}</span>}
           desc={`输入 ${formatUnits(inRangeSum.input)} · 输出 ${formatUnits(inRangeSum.output)} · 缓存 ${formatUnits(inRangeSum.cache)}`}
           open={openStat === 'total'}
           onToggle={() => { toggleStat('total') }}
@@ -246,6 +327,8 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
           icon={modelsIcon(18)}
           label="模型数"
           value={String(modelRankData.length)}
+          sub={modelsSub.text}
+          subTone={modelsSub.tone}
           desc={`范围内用到 ${modelRankData.length} 个不同模型`}
           open={openStat === 'models'}
           onToggle={() => { toggleStat('models') }}
@@ -256,6 +339,8 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
           icon={daysIcon(18)}
           label="活跃天数"
           value={String(filtered.filter(d => (d.tokens ?? 0) > 0).length)}
+          sub={activeSub.text}
+          subTone={activeSub.tone}
           desc={`${filtered.length} 天位于所选范围`}
           open={openStat === 'days'}
           onToggle={() => { toggleStat('days') }}
@@ -266,6 +351,8 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
           icon={hitIcon(18)}
           label="平均命中率"
           value={formatHitRate(hitRate)}
+          sub={hitSub.text}
+          subTone={hitSub.tone}
           desc="缓存读占提示词比重 · 左右平均"
           open={openStat === 'hit'}
           onToggle={() => { toggleStat('hit') }}
@@ -297,7 +384,7 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
         />
       )}
 
-      {/* ── 工具栏：搜索 + 排序 ── */}
+      {/* ── 工具栏：搜索 + 指标下拉 ── */}
       <div className={css.toolbar}>
         <div className={css.searchBox}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flex: 'none' }}>
@@ -321,44 +408,30 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
             type="button"
             className={css.toolButton}
             aria-haspopup="menu"
-            aria-expanded={sortMenuOpen || undefined}
-            onClick={() => { setSortMenuOpen(v => !v) }}
+            aria-expanded={metricMenuOpen || undefined}
+            onClick={() => { setMetricMenuOpen(v => !v) }}
+            title="热力图指标口径"
           >
-            {sortKey === 'total' ? '用量' : '名称'}
-            <span aria-hidden="true" style={{ fontSize: 11, opacity: 0.7 }}>{sortAsc ? '↑' : '↓'}</span>
+            {METRIC_OPTIONS.find(m => m.id === metric)?.label ?? '用量'}
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.7 }}>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
           </button>
-          {sortMenuOpen && (
+          {metricMenuOpen && (
             <>
-              <button type="button" className={css.bulkOverlay} aria-label="关闭" onClick={() => { setSortMenuOpen(false) }} />
-              <div className={css.dropMenu} role="menu">
-                <button
-                  type="button" role="menuitemradio" className={css.dropItem} aria-checked={sortKey === 'total' && !sortAsc}
-                  onClick={() => { setSortKey('total'); setSortAsc(false); setSortMenuOpen(false) }}
-                >
-                  <span className={css.dropCheck} data-on={sortKey === 'total' && !sortAsc || undefined} aria-hidden="true">{sortKey === 'total' && !sortAsc ? '✓' : ''}</span>
-                  用量 最多优先
-                </button>
-                <button
-                  type="button" role="menuitemradio" className={css.dropItem} aria-checked={sortKey === 'total' && sortAsc}
-                  onClick={() => { setSortKey('total'); setSortAsc(true); setSortMenuOpen(false) }}
-                >
-                  <span className={css.dropCheck} data-on={sortKey === 'total' && sortAsc || undefined} aria-hidden="true">{sortKey === 'total' && sortAsc ? '✓' : ''}</span>
-                  用量 最少优先
-                </button>
-                <button
-                  type="button" role="menuitemradio" className={css.dropItem} aria-checked={sortKey === 'name' && !sortAsc}
-                  onClick={() => { setSortKey('name'); setSortAsc(false); setSortMenuOpen(false) }}
-                >
-                  <span className={css.dropCheck} data-on={sortKey === 'name' && !sortAsc || undefined} aria-hidden="true">{sortKey === 'name' && !sortAsc ? '✓' : ''}</span>
-                  名称 A→Z
-                </button>
-                <button
-                  type="button" role="menuitemradio" className={css.dropItem} aria-checked={sortKey === 'name' && sortAsc}
-                  onClick={() => { setSortKey('name'); setSortAsc(true); setSortMenuOpen(false) }}
-                >
-                  <span className={css.dropCheck} data-on={sortKey === 'name' && sortAsc || undefined} aria-hidden="true">{sortKey === 'name' && sortAsc ? '✓' : ''}</span>
-                  名称 Z→A
-                </button>
+              <button type="button" className={css.bulkOverlay} aria-label="关闭" onClick={() => { setMetricMenuOpen(false) }} />
+              <div className={css.dropMenu} role="menu" aria-label="热力图指标">
+                {METRIC_OPTIONS.map(m => (
+                  <button
+                    key={m.id}
+                    type="button" role="menuitemradio" className={css.dropItem} aria-checked={m.id === metric}
+                    onClick={() => { setMetric(m.id); setMetricMenuOpen(false) }}
+                  >
+                    <span className={css.dropCheck} data-on={m.id === metric || undefined} aria-hidden="true">{m.id === metric ? '✓' : ''}</span>
+                    {m.label}
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' }}>{METRIC_LABELS[m.id]}</span>
+                  </button>
+                ))}
               </div>
             </>
           )}
@@ -368,28 +441,25 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
       </div>
 
       <div className={`${css.mainScroll} ${modalStaggerClass}`}>
-        {/* Token 活动：全量记录贡献热力（52 周） */}
-        <HubSection title="Token 活动" meta="52 周贡献热力，点格子看当日模型明细">
-          <div style={rowCard}>
-            <ActivityGrid
-              days={usage}
-              mode={activityMode}
-              onMode={setActivityMode}
-              selectedKey={selectedDay}
-              onSelect={setSelectedDay}
-            />
-          </div>
-        </HubSection>
+        {/* Token 活动：52 周滚动热力（每周 = 逐日着色 / 累计） */}
+        <ActivityGrid
+          days={heatDays}
+          mode={activityMode}
+          onMode={setActivityMode}
+          metric={metric}
+          selectedKey={selectedDay}
+          onSelect={setSelectedDay}
+        />
 
-        {/* 热力行 */}
+        {/* 热力行：月热力（日用量）+ 年热力（每月汇总） */}
         <HubSection title="热力">
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, alignItems: 'start' }}>
             <div style={rowCard}>
-              <CardHead name={`${year} 年 ${month} 月热力`} meta="点击格子看当日模型明细" />
-              <Heatmap cells={monthCells} onSelect={c => setSelectedDay(c.label)} cellText="both" />
+              <CardHead name={`${year} 年 ${month} 月热力（日用量）`} meta="点击日查看当日模型明细" />
+              <MonthCalendar year={year} month={month} cells={monthCells} onSelect={c => setSelectedDay(c.key)} />
             </div>
             <div style={rowCard}>
-              <CardHead name={`${year} 年度热力`} meta="1-6 月 / 7-12 月" />
+              <CardHead name={`${year} 年度热力（每月汇总）`} meta="1-6 月 / 7-12 月" />
               <Heatmap cells={yearCells} rows={2} cellText="both" />
             </div>
           </div>
@@ -404,7 +474,7 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
           </HubSection>
         )}
 
-        {/* 模型消耗排行（受搜索/排序影响） */}
+        {/* 模型消耗排行（受搜索影响） */}
         <HubSection title="模型消耗排行" meta={`${rangeLabel} · ${sortedRank.length} 个模型`}>
           <div style={rowCard}>
             {sortedRank.length === 0
@@ -448,6 +518,21 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
             )}
           </div>
         </HubSection>
+
+        {/* 热力图说明 */}
+        <div className={css.note} role="note">
+          <span className={css.noteIcon} aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v5" />
+              <path d="M12 8h.01" />
+            </svg>
+          </span>
+          <span className={css.noteBody}>
+            <span className={css.noteTitle}>热力图说明</span>
+            <span className={css.noteText}>颜色越深代表用量越高，支持查看每周/累计用量及模型分布明细。</span>
+          </span>
+        </div>
       </div>
     </>
   )

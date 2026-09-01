@@ -1,31 +1,59 @@
 /**
  * Token 活动 —— GitHub 风格贡献热力（52 周 × 7 天，右对齐当前周）。
  *
- * 卡头分段控件切换三种口径：
- *  - 每日：当天 token 总量；
- *  - 每周：周一起始的整周合计（同列七格同值）；
+ * 卡头分段控件两种口径（与设计稿一致）：
+ *  - 每周：当天指标值（按周滚动窗口逐日着色）；
  *  - 累计：自首个有记录日起的滚动累计（跨 52 周窗口，保持曲线连续）。
  *
- * 点击带日期（过去）的格子下钻「当日模型明细」，与月/年热力共用同一个
- * selectedDay 状态。未到的未来天渲染为不可交互占位格，日历形状不跳动。
+ * 顶部月份标签（每周起始月只在列首出现）、左侧星期标签（周一/周三/周五/周日），
+ * 悬浮出卡片式 tooltip（日期 + 星期 + 指标值 + 当日模型数），点击带日期（过去）
+ * 的格子下钻「当日模型明细」，与月/年热力共用同一个 selectedDay 状态。
+ * 未到的未来天渲染为不可交互占位格，日历形状不跳动。
  * 数据取完整记录（不限查询范围）——「活动」是横跨历史的总览。
+ *
+ * 导出的 `buildActivityGrid` / `activityColor` 属插件公开 API，保持可用。
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { formatUnits, formatHitRate } from './format'
+import { formatUnits } from './format'
 import type { UsageDay } from './aggregate'
 
 export type ActivityMode = 'day' | 'week' | 'cumulative'
 
+/** 热力图指标口径：与工具栏下拉联动。 */
+export type ActivityMetric = 'tokens' | 'input' | 'output' | 'cache' | 'requests'
+
+export const METRIC_LABELS: Record<ActivityMetric, string> = {
+  tokens: 'Token 用量',
+  input: '输入',
+  output: '输出',
+  cache: '缓存',
+  requests: '调用次数',
+}
+
+/** 单日某指标的数值（无数据 = 0）。 */
+export function metricValueOf(day: UsageDay | null | undefined, metric: ActivityMetric): number {
+  if (day === null || day === undefined) return 0
+  switch (metric) {
+    case 'input': return day.inputTokens ?? 0
+    case 'output': return day.outputTokens ?? 0
+    case 'cache': return (day.cacheReadTokens ?? 0) + (day.cacheWriteTokens ?? 0)
+    case 'requests': return day.requests ?? 0
+    default: return day.tokens ?? 0
+  }
+}
+
 /** 列数固定为 52 周（GitHub 年视图惯例）；数据不足时左侧自然留空。 */
 export const ACTIVITY_COLUMNS = 52
-const CELL = 20
+const CELL = 14
 const GAP = 3
-const RADIUS = 4
+const RADIUS = 3
 const TIP_GAP = 8
 const BLUE = [31, 111, 235] as const
 
 const STYLE_ID = 'dsh-activity-styles'
+
+const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const
 
 /**
  * 贡献格子样式：入场回落 + 悬浮放大光晕 + 选中环 / 今日环 + 模式切换时的
@@ -52,7 +80,7 @@ const SHEET = `
 .dsh-activity-cell[data-clickable="true"] { cursor: pointer; }
 .dsh-activity-cell[data-clickable="true"]:hover {
   z-index: 2;
-  transform: scale(1.35);
+  transform: scale(1.5);
   box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary), 0 6px 14px color-mix(in srgb, var(--dsw-alias-state-business-primary) 38%, transparent);
 }
 .dsh-activity-cell[data-today="true"] { box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary); }
@@ -60,7 +88,7 @@ const SHEET = `
 .dsh-activity-tabs {
   position: relative;
   flex: none;
-  width: 150px;
+  width: 104px;
   display: flex;
   padding: 3px;
   border-radius: 10px;
@@ -71,7 +99,7 @@ const SHEET = `
   left: 3px;
   top: 3px;
   bottom: 3px;
-  width: calc((100% - 6px) / 3);
+  width: calc((100% - 6px) / 2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
@@ -128,7 +156,7 @@ function shiftDayKey(key: string, delta: number): string {
 }
 
 /** 周一起始的星期索引（周一 = 0 … 周日 = 6）。 */
-function weekdayIndex(key: string): number {
+export function weekdayIndex(key: string): number {
   const [y, m, d] = key.split('-').map(Number)
   return (new Date(y, (m ?? 1) - 1, d ?? 1).getDay() + 6) % 7
 }
@@ -137,12 +165,17 @@ export interface ActivityCell {
   key: string
   column: number
   row: number
-  /** 当前口径下的展示值（dayTokens / weekTokens / 累计）。 */
+  /** 当前口径下的展示值（每周 = 当日指标值 / 累计 = 滚动累计）。 */
   tokens: number
+  /** 当日指标值（口径由 buildActivityGrid 的 metric 决定；tokens 口径即当日 token 总量）。 */
   dayTokens: number
+  /** 当前周（同列）指标合计，仅在 week 口径下与展示值一致。 */
   weekTokens: number
+  /** 当日请求数。 */
   requests: number
   weekRequests: number
+  /** 当日出现的不同模型数。 */
+  modelCount: number
   hitRate: number | null
   isToday: boolean
   /** 该日已到（<= 今天）；false = 当前周内未到的占位格。 */
@@ -151,6 +184,7 @@ export interface ActivityCell {
 
 export interface ActivitySnapshot {
   mode: ActivityMode
+  metric: ActivityMetric
   columns: number
   cells: ActivityCell[]
   /** 7 行（周一 → 周日），每行一列一周。 */
@@ -163,13 +197,20 @@ export interface ActivitySnapshot {
   startKey: string
   endKey: string
   firstRecorded: string | null
+  /** 每周列首的月份标签：{column, label(如 "10月")}，列 0 起跳。 */
+  monthLabels: Array<{ column: number; label: string }>
 }
 
 /**
  * 由完整记录构建 52 周贡献热力。纯函数，`today` 可注入以便测试。
- * 累计口径贯穿全部记录（含窗口外更早的天），末格累计 == 全部 token 总量。
+ * 累计口径贯穿全部记录（含窗口外更早的天），末格累计 == 全部指标总和。
  */
-export function buildActivityGrid(days: UsageDay[] | null | undefined, mode: ActivityMode, today: Date = new Date()): ActivitySnapshot {
+export function buildActivityGrid(
+  days: UsageDay[] | null | undefined,
+  mode: ActivityMode,
+  today: Date = new Date(),
+  metric: ActivityMetric = 'tokens',
+): ActivitySnapshot {
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const dayMap = new Map<string, UsageDay>()
   if (Array.isArray(days)) {
@@ -196,14 +237,14 @@ export function buildActivityGrid(days: UsageDay[] | null | undefined, mode: Act
   for (const key of [...dayMap.keys()].sort()) {
     if (firstRecorded === null) firstRecorded = key
     const entry = dayMap.get(key)!
-    const tokens = entry.tokens ?? 0
-    running += tokens
+    const value = metricValueOf(entry, metric)
+    running += value
     const index = indexByKey.get(key)
     if (index === undefined) continue
-    buckets[index].tokens = tokens
+    buckets[index].tokens = value
     buckets[index].requests = entry.requests ?? 0
     buckets[index].cumulative = running
-    buckets[index].active = tokens > 0
+    buckets[index].active = value > 0
   }
 
   const weekTokens = new Array<number>(columns).fill(0)
@@ -232,6 +273,7 @@ export function buildActivityGrid(days: UsageDay[] | null | undefined, mode: Act
     const value = mode === 'week' ? weekTokens[column]
       : mode === 'cumulative' ? bucket.cumulative
         : bucket.tokens
+    const day = dayMap.get(bucket.key)
     const cell: ActivityCell = {
       key: bucket.key,
       column,
@@ -241,7 +283,8 @@ export function buildActivityGrid(days: UsageDay[] | null | undefined, mode: Act
       weekTokens: weekTokens[column],
       requests: bucket.requests,
       weekRequests: weekRequests[column],
-      hitRate: bucket.active ? (dayMap.get(bucket.key)?.cacheHitRate ?? null) : null,
+      modelCount: day?.models?.length ?? 0,
+      hitRate: bucket.active ? (day?.cacheHitRate ?? null) : null,
       isToday: bucket.key === todayKey,
       past: bucket.key <= todayKey,
     }
@@ -256,8 +299,22 @@ export function buildActivityGrid(days: UsageDay[] | null | undefined, mode: Act
     if (value > max) max = value
   }
 
+  // 月份标签：每周列首（该周周一的月份）与上一列不同时标注；首列月份
+  // 不标注（与参考稿一致：窗口起始月省去，避免与网格左缘挤在一起）。
+  const monthLabels: Array<{ column: number; label: string }> = []
+  let prevMonth = firstKey.slice(0, 7)
+  for (let c = 1; c < columns; c += 1) {
+    const monday = shiftDayKey(firstKey, c * 7)
+    const month = monday.slice(0, 7)
+    if (month !== prevMonth) {
+      monthLabels.push({ column: c, label: `${Number(month.slice(5))}月` })
+      prevMonth = month
+    }
+  }
+
   return {
     mode,
+    metric,
     columns,
     cells,
     rows,
@@ -269,6 +326,7 @@ export function buildActivityGrid(days: UsageDay[] | null | undefined, mode: Act
     startKey: firstKey,
     endKey,
     firstRecorded,
+    monthLabels,
   }
 }
 
@@ -283,54 +341,69 @@ export function activityColor(tokens: number, max: number): string {
   return `rgba(${BLUE[0]}, ${BLUE[1]}, ${BLUE[2]}, ${alpha.toFixed(3)})`
 }
 
+/** UI 分段控件口径（与参考稿一致：每周 = 逐日着色 / 累计）。 */
 const MODES: Array<{ id: ActivityMode; index: number; label: string }> = [
-  { id: 'day', index: 0, label: '每日' },
-  { id: 'week', index: 1, label: '每周' },
-  { id: 'cumulative', index: 2, label: '累计' },
+  { id: 'day', index: 0, label: '每周' },
+  { id: 'cumulative', index: 1, label: '累计' },
 ]
 
 interface HoverState { cell: ActivityCell; left: number; top: number }
 
-export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect }: {
+export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric = 'tokens', title = 'Token 活动', subtitle = '52 周滚动热力图，点击格子查看当日模型明细' }: {
   days: UsageDay[] | null
   mode: ActivityMode
   onMode: (mode: ActivityMode) => void
   selectedKey: string | null
   onSelect: (key: string) => void
+  metric?: ActivityMetric
+  title?: string
+  subtitle?: string
 }): JSX.Element {
   const [hover, setHover] = useState<HoverState | null>(null)
-  const snapshot = useMemo(() => buildActivityGrid(days, mode), [days, mode])
+  const snapshot = useMemo(() => buildActivityGrid(days, mode, new Date(), metric), [days, mode, metric])
 
   useEffect(() => ensureActivityStyles(), [])
 
-  const peak = snapshot.peakDay === null
-    ? ''
-    : `${snapshot.peakDay.slice(5).replace('-', ' / ')} ${formatUnits(snapshot.peakTokens)}`
-  const summary = snapshot.activeDays === 0
-    ? '暂无记录'
-    : `${snapshot.activeDays} 活跃天 · 峰值 ${peak}`
   const legendSteps = [0.3, 0.5, 0.68, 0.85, 1]
+  const metricLabel = METRIC_LABELS[metric]
 
-  const tooltipBody = (cell: ActivityCell): string => {
+  const tooltipBody = (cell: ActivityCell): JSX.Element => {
     if (mode === 'week') {
       const start = shiftDayKey(cell.key, -cell.row)
       const end = shiftDayKey(cell.key, 6 - cell.row)
-      return `${start} ～ ${end} · 合计 ${formatUnits(cell.tokens)} · ${cell.weekRequests} 次请求`
+      return (
+        <>
+          <div style={{ fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }}>{start} ～ {end}</div>
+          <span>周合计 {formatUnits(cell.tokens)} · {cell.weekRequests} 次请求</span>
+        </>
+      )
     }
-    if (mode === 'cumulative') {
-      const from = snapshot.firstRecorded ?? snapshot.startKey
-      return `${from} → ${cell.key} 累计 ${formatUnits(cell.tokens)}`
-    }
-    const hit = cell.hitRate === null ? '' : ` · 命中 ${formatHitRate(cell.hitRate)}`
-    return `${cell.key} · 合计 ${formatUnits(cell.dayTokens)} · ${cell.requests} 次请求${hit}`
+    const valueLabel = mode === 'cumulative' ? `累计${metricLabel}` : metricLabel
+    return (
+      <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 170 }}>
+          <div style={{ fontWeight: 600, color: 'var(--dsw-alias-label-primary)', marginBottom: 1 }}>
+            {cell.key} <span style={{ color: 'var(--dsw-alias-label-tertiary)', fontWeight: 500 }}>{WEEKDAYS[cell.row]}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
+            <span>{valueLabel}</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-primary)' }}>{formatUnits(cell.tokens)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
+            <span>模型数</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--dsw-alias-label-primary)' }}>{cell.modelCount}</span>
+          </div>
+        </div>
+      </>
+    )
   }
 
   return (
     <div>
-      {/* 卡头：标题 + 摘要 + 分段控件（滑动指示器） */}
+      {/* 卡头：标题 + 副标题 + 分段控件（滑动指示器） */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' }}>Token 活动</span>
-        <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', fontVariantNumeric: 'tabular-nums' }}>{summary}</span>
+        <span style={{ fontSize: 14, lineHeight: '22px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }}>{title}</span>
+        <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</span>
         <span style={{ marginLeft: 'auto' }}>
           <span
             className="dsh-activity-tabs"
@@ -357,49 +430,86 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect }: {
 
       {/* 7 行 × 52 列贡献网格：整块居中，窄视口横向滚动兜底 */}
       <div style={{ overflowX: 'auto', marginTop: 12, paddingBottom: 2 }}>
-        <div style={{ width: 'max-content', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: GAP }}>
+        <div style={{ width: 'max-content', margin: '0 auto', display: 'flex', flexDirection: 'column' }}>
+          {/* 月份标签行（GitHub 惯例：新月份第一周列首标注，跳过首列） */}
+          <div style={{ position: 'relative', height: 16, marginLeft: 30 }}>
+            {snapshot.monthLabels.map(m => (
+              <span
+                key={m.column}
+                style={{
+                  position: 'absolute',
+                  left: m.column * (CELL + GAP),
+                  top: 0,
+                  fontSize: 11,
+                  lineHeight: '16px',
+                  color: 'var(--dsw-alias-label-tertiary)',
+                  whiteSpace: 'nowrap',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {m.label}
+              </span>
+            ))}
+          </div>
+          {/* 星期行：周一/周三/周五/周日（与参考稿一致，隔行标注） */}
           {snapshot.rows.map((row, rowIndex) => (
-            <div key={rowIndex} style={{ display: 'flex', gap: GAP }}>
-              {row.map(cell => {
-                if (!cell.past) {
+            <div key={rowIndex} style={{ display: 'flex', alignItems: 'center', height: CELL + GAP, marginTop: rowIndex === 0 ? 0 : GAP }}>
+              <span
+                style={{
+                  flex: 'none',
+                  width: 30,
+                  fontSize: 11,
+                  lineHeight: `${CELL}px`,
+                  color: 'var(--dsw-alias-label-tertiary)',
+                  textAlign: 'left',
+                  paddingRight: 6,
+                  boxSizing: 'border-box',
+                }}
+              >
+                {rowIndex % 2 === 0 ? WEEKDAYS[rowIndex] : ''}
+              </span>
+              <span style={{ display: 'flex', gap: GAP }}>
+                {row.map(cell => {
+                  if (!cell.past) {
+                    return (
+                      <span
+                        key={cell.key}
+                        className="dsh-activity-cell"
+                        data-clickable="false"
+                        data-past="false"
+                        aria-hidden="true"
+                        style={{
+                          background: 'color-mix(in srgb, var(--dsw-alias-border-l2) 30%, transparent)',
+                          animationDelay: `${cell.column * 6}ms`,
+                        }}
+                      />
+                    )
+                  }
                   return (
-                    <span
+                    <button
                       key={cell.key}
+                      type="button"
                       className="dsh-activity-cell"
-                      data-clickable="false"
-                      data-past="false"
-                      aria-hidden="true"
+                      data-clickable="true"
+                      data-past="true"
+                      data-today={cell.isToday}
+                      data-selected={selectedKey === cell.key}
+                      aria-label={`${cell.key} · ${formatUnits(cell.tokens)}`}
+                      aria-pressed={selectedKey === cell.key}
+                      onClick={() => onSelect(cell.key)}
+                      onMouseEnter={(e) => {
+                        const r = e.currentTarget.getBoundingClientRect()
+                        setHover({ cell, left: r.left, top: r.top })
+                      }}
+                      onMouseLeave={() => setHover(null)}
                       style={{
-                        background: 'color-mix(in srgb, var(--dsw-alias-border-l2) 30%, transparent)',
+                        background: activityColor(cell.tokens, snapshot.max),
                         animationDelay: `${cell.column * 6}ms`,
                       }}
                     />
                   )
-                }
-                return (
-                  <button
-                    key={cell.key}
-                    type="button"
-                    className="dsh-activity-cell"
-                    data-clickable="true"
-                    data-past="true"
-                    data-today={cell.isToday}
-                    data-selected={selectedKey === cell.key}
-                    aria-label={`${cell.key} · ${formatUnits(cell.tokens)}`}
-                    aria-pressed={selectedKey === cell.key}
-                    onClick={() => onSelect(cell.key)}
-                    onMouseEnter={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect()
-                      setHover({ cell, left: r.left, top: r.top })
-                    }}
-                    onMouseLeave={() => setHover(null)}
-                    style={{
-                      background: activityColor(cell.tokens, snapshot.max),
-                      animationDelay: `${cell.column * 6}ms`,
-                    }}
-                  />
-                )
-              })}
+                })}
+              </span>
             </div>
           ))}
         </div>
@@ -420,18 +530,17 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect }: {
         <div style={{
           position: 'fixed',
           bottom: typeof window !== 'undefined' ? window.innerHeight - hover.top + TIP_GAP : 0,
-          left: hover.left,
+          left: hover.left + 10,
           background: 'var(--dsw-alias-bg-layer-3)',
           border: '1px solid var(--dsw-alias-border-l1)',
-          borderRadius: 8,
-          padding: '8px 12px',
+          borderRadius: 10,
+          padding: '9px 12px',
           fontSize: 12,
           lineHeight: '18px',
-          whiteSpace: 'nowrap',
+          color: 'var(--dsw-alias-label-secondary)',
           zIndex: 6100,
           boxShadow: '0 8px 24px rgba(0,0,0,.35)',
           pointerEvents: 'none',
-          color: 'var(--dsw-alias-label-secondary)',
         }}>
           {tooltipBody(hover.cell)}
         </div>,
