@@ -53,6 +53,11 @@ dsh plugin --profile web remove dsh-triad
 
 路由：`/api/dsh-memory/*`（含 `/models` 模型目录、`/related` 相关记忆）
 
+<p align="center">
+  <img src="docs/screenshots/memory-panel.png" alt="记忆面板" width="720" />
+  <br><em>记忆面板：全部记忆 / 变更 / 回收站，项目与分类，详情页含置顶、重要度、相关记忆与历史记录</em>
+</p>
+
 ### 用量
 
 四个 Tab：**用量 / 趋势 / 账户 / 信号**，含面积图、环形图、仪表、热力图、排名条。
@@ -76,6 +81,14 @@ dsh plugin --profile web remove dsh-triad
 
 路由：`/api/skill-manager/*`（集合管理）、`/api/skill-toggles/*`（开关与预设覆盖）、
 `/api/mcp-recommended{,/search,/resolve}`
+
+<p align="center">
+  <img src="docs/screenshots/skills-manager.png" alt="SKILL 技能管理" width="720" />
+  <br><em>SKILL 视图：Agent 预设分类与快捷筛选、统计卡、技能包分组、技能卡（开关 / 全局 / 工具行）与快速上手指南</em>
+  <br><br>
+  <img src="docs/screenshots/mcp-manager.png" alt="MCP 管理" width="720" />
+  <br><em>MCP 视图：MCP Server 总数 / 已启用 / 可用工具 / 运行中统计，Server 列表（启停、自启动、删除），推荐目录 / 工具列表 / 连接日志 / 配置模板</em>
+</p>
 
 > 技能在 webui 里原本是**两个独立 host 模块**（`skill-manager` 与 `skill-toggles`），
 > 缺了后者技能面板的「Agent 预设」筛选条就会全部 404。这里两个都在。
