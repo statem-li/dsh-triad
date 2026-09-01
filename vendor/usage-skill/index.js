@@ -377,9 +377,15 @@ export async function collectUsage(ctx) {
 					state.currentModel = null;
 					state.consumed = 0;
 				}
-				const count = session.events.length;
+				// DSH 0.1.2-alpha.4 removed the public `Session#events` accessor
+				// (only snapshotEvents() remains). Read whichever the host
+				// exposes so the live fold works on older and current hosts.
+				const events = session.events !== void 0 ? session.events
+					: typeof session.snapshotEvents === "function" ? session.snapshotEvents()
+					: [];
+				const count = events.length;
 				if ((state.consumed ?? 0) < count) {
-					applyUsageDelta(state, session.events.slice(state.consumed ?? 0));
+					applyUsageDelta(state, events.slice(state.consumed ?? 0));
 					state.consumed = count;
 				}
 				state.kind = "live";
