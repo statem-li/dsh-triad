@@ -60,12 +60,30 @@ export function Workbench({ onClose, closing = false, anchor = null, onCardMouse
   const [tab, setTab] = useState<TabKey>('trend')
   const [preset, setPreset] = useState<RangePreset>('today')
   const [custom, setCustom] = useState<DateRange | null>(null)
+  const [refreshTick, setRefreshTick] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
   const [counts, setCounts] = useState<SideCounts>({ trend: '—', detail: '—', signal: '—', signalWarn: false, accounts: '—', accountsWarn: false })
   const close = onClose ?? (() => {})
 
   ensureHubStyles()
 
   const { range, label: rangeLabel } = resolveRange(preset, custom)
+
+  /** 头部刷新：推进 refreshTick（趋势 tab 重拉），按钮短暂 spin。 */
+  const doRefresh = (): void => {
+    setRefreshing(true)
+    setRefreshTick(t => t + 1)
+    window.setTimeout(() => setRefreshing(false), 900)
+  }
+
+  /** 头部日期：YYYY-MM-DD 星期X。 */
+  const headDate = ((): string => {
+    const now = new Date()
+    const week = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()]
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    return `${now.getFullYear()}-${mm}-${dd} 星期${week}`
+  })()
 
   useEffect(() => {
     let alive = true
@@ -104,18 +122,27 @@ export function Workbench({ onClose, closing = false, anchor = null, onCardMouse
         onJumpAccounts={() => setTab('accounts')}
         onJumpSignal={() => setTab('signal')}
         onJumpDetail={() => setTab('detail')}
+        refreshTick={refreshTick}
       />
     ),
     detail: <UsageTab range={range} rangeLabel={rangeLabel} />,
     signal: <SignalTab />,
-    accounts: <AccountsTab />,
+    accounts: <AccountsTab onJumpSignal={() => setTab('signal')} onJumpDetail={() => setTab('detail')} />,
   }
 
   return (
     <PopoverShell solid closing={closing} onClose={close} anchor={anchor} size={TAB_SIZES[tab]} onCardMouseEnter={onCardMouseEnter} onCardMouseLeave={onCardMouseLeave} ariaLabel="用量工作台">
       <div className="psh-head">
         <span className="psh-title" style={{ flex: 'none' }}>用量工作台</span>
-        <button type="button" className="psh-close" style={{ marginLeft: 'auto' }} aria-label="关闭" onClick={close}>
+        <span style={{ flex: 1, minWidth: 0 }} />
+        <button type="button" className={css.refresh} data-spin={refreshing || undefined} aria-label="刷新用量数据" onClick={doRefresh}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 0 1-15.9 5.7M3 12a9 9 0 0 1 15.9-5.7" />
+            <path d="M21 3v6h-6M3 21v-6h6" />
+          </svg>
+        </button>
+        <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap', marginRight: 2 }}>{headDate}</span>
+        <button type="button" className="psh-close" aria-label="关闭" onClick={close}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>

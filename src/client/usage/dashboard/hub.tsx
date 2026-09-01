@@ -84,6 +84,32 @@ const SHEET = `
   color: var(--dsw-alias-label-primary, #1f2430); font-family: inherit; color-scheme: dark light; outline: none;
 }
 .usm-range-date:focus { border-color: var(--dsw-alias-state-business-primary, #4176e6); }
+/* ── 趋势页 KPI 方块图标（data-shape=square：圆角方块 + 色调浅底） ── */
+.usm-stat-icon[data-shape='square'] { width: 42px; height: 42px; border-radius: 12px; }
+.usm-stat-icon[data-shape='square'][data-tone='blue'] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 14%, var(--dsw-alias-bg-base, #fff)); }
+.usm-stat-icon[data-shape='square'][data-tone='green'] { background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #22c55e) 14%, var(--dsw-alias-bg-base, #fff)); }
+.usm-stat-icon[data-shape='square'][data-tone='violet'] { background: color-mix(in srgb, #7c5cf0 14%, var(--dsw-alias-bg-base, #fff)); }
+.usm-stat-icon[data-shape='square'][data-tone='orange'] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, #f59e0b) 16%, var(--dsw-alias-bg-base, #fff)); }
+/* ── 图表卡分段控件（小时/天/7天/30天） ── */
+.usm-seg { flex: none; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)); border-radius: 9px; background: var(--dsw-alias-bg-base, #fff); }
+.usm-seg-btn { flex: none; height: 24px; padding: 0 10px; border: none; border-radius: 7px; background: transparent; font-size: 12px; line-height: 1; color: var(--dsw-alias-label-secondary, #61666b); cursor: pointer; font-family: inherit; white-space: nowrap; transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease; }
+.usm-seg-btn:hover { color: var(--dsw-alias-label-primary, #1f2430); background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04)); }
+.usm-seg-btn[data-active] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 16%, transparent); color: var(--dsw-alias-state-business-primary, #4176e6); font-weight: 600; }
+/* ── 概览瓦片（今日概览） ── */
+.usm-ov-grid { flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.usm-ov-tile { flex: none; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06)); border-radius: 14px; background: var(--dsw-alias-bg-module-platform, #fff); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; opacity: 0; animation: usm-card-in 300ms cubic-bezier(0.2, 0.7, 0.3, 1.06) forwards; transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease; }
+.usm-ov-tile:hover { box-shadow: 0 6px 18px color-mix(in srgb, var(--dsw-alias-label-primary, #0f1115) 10%, transparent); transform: translateY(-1px); border-color: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.13)); }
+.usm-ov-label { font-size: 12px; line-height: 17px; color: var(--dsw-alias-label-secondary, #8f96a3); }
+.usm-ov-value { font-size: 20px; line-height: 27px; font-weight: 600; color: var(--dsw-alias-label-primary, #0f1115); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* ── 供应商用量排行行 ── */
+.usm-prov-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px; margin: 0 -6px; border-radius: 8px; transition: background 120ms ease; }
+.usm-prov-row:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04)); }
+/* ── 头部刷新按钮（spin 态） ── */
+.usm-refresh { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 8px; padding: 0; background: transparent; cursor: pointer; color: var(--dsw-alias-label-secondary, #bbb); transition: background 140ms ease, color 140ms ease, transform 140ms ease; }
+.usm-refresh:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); color: var(--dsw-alias-label-primary, #eee); }
+.usm-refresh:active { transform: scale(0.94); }
+.usm-refresh[data-spin] svg { animation: usm-spin 700ms linear infinite; }
+@keyframes usm-spin { to { transform: rotate(360deg); } }
 /* ── 统计卡行（宽卡）：hover 悬浮 desc、点击展开明细 ── */
 .usm-stats-row { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 14px 16px 0; }
 .usm-stat {
@@ -121,6 +147,9 @@ const SHEET = `
 .usm-stat-value { font-size: 26px; font-weight: 700; line-height: 31px; letter-spacing: -0.2px; color: var(--dsw-alias-label-primary, #0f1115); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .usm-stat-value[data-tone='warn'] { color: var(--dsw-alias-state-warn-primary, #f59e0b); }
 /* desc 悬浮气泡：hover 出现，不占布局 */
+.usm-stat-sub { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 11px; line-height: 15px; color: var(--dsw-alias-label-tertiary, #81858c); font-variant-numeric: tabular-nums; white-space: nowrap; animation: usm-form-in 260ms ease-out backwards; }
+.usm-stat-sub[data-tone='up'] { color: var(--dsw-alias-state-success-primary, #22c55e); }
+.usm-stat-sub[data-tone='down'] { color: var(--dsw-alias-state-error-primary, #ef4444); }
 .usm-stat-desc {
   position: absolute; left: 18px; right: 18px; top: calc(100% - 8px); z-index: 6;
   box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
@@ -206,6 +235,18 @@ const SHEET = `
   border-radius: 12px; padding: 18px; text-align: center; font-size: 12px; line-height: 18px;
   color: var(--dsw-alias-label-tertiary, #81858c);
 }
+/* ── 底部说明横幅（热力图说明） ── */
+.usm-note {
+  flex: none; display: flex; align-items: flex-start; gap: 10px; box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 16%, transparent);
+  border-radius: 12px; padding: 12px 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 7%, var(--dsw-alias-bg-base, #fff)) 0%, color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 3%, var(--dsw-alias-bg-base, #fff)) 100%);
+  opacity: 0; animation: usm-card-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1.06) 200ms forwards;
+}
+.usm-note-icon { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--dsw-alias-state-business-primary, #4176e6); background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 12%, transparent); }
+.usm-note-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.usm-note-title { font-size: 13px; font-weight: 700; line-height: 18px; color: var(--dsw-alias-label-primary, #1f2430); }
+.usm-note-text { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary, #61666b); }
 /* ── 移动端：左栏转横向导航 ── */
 @media (max-width: 767.98px) {
   .usm-hub { flex-direction: column; }
@@ -253,6 +294,7 @@ export const css = {
   statLabel: 'usm-stat-label',
   statValue: 'usm-stat-value',
   statDesc: 'usm-stat-desc',
+  statSub: 'usm-stat-sub',
   statDetail: 'usm-stat-detail',
   statDetailTitle: 'usm-stat-detail-title',
   breakdown: 'usm-breakdown',
@@ -278,6 +320,19 @@ export const css = {
   sectionMeta: 'usm-section-meta',
   sectionAction: 'usm-section-action',
   empty: 'usm-empty',
+  note: 'usm-note',
+  noteIcon: 'usm-note-icon',
+  noteBody: 'usm-note-body',
+  noteTitle: 'usm-note-title',
+  noteText: 'usm-note-text',
+  seg: 'usm-seg',
+  segBtn: 'usm-seg-btn',
+  ovGrid: 'usm-ov-grid',
+  ovTile: 'usm-ov-tile',
+  ovLabel: 'usm-ov-label',
+  ovValue: 'usm-ov-value',
+  provRow: 'usm-prov-row',
+  refresh: 'usm-refresh',
 }
 
 /** 幂等注入 hub 样式。 */
@@ -422,28 +477,34 @@ export function HubCatItem({ active, icon, label, count, warn, onClick, children
 }
 
 /** 统计卡：宽卡 + hover 悬浮 desc + 点击展开明细。 */
-export function HubStat({ tone, icon, label, value, valueWarn, desc, open, onToggle, delay }: {
+export function HubStat({ tone, icon, label, value, valueWarn, sub, subTone, desc, open, onToggle, delay, iconShape = 'circle' }: {
   tone: 'blue' | 'green' | 'violet' | 'orange'
   icon: ReactNode
   label: string
   value: string
   valueWarn?: boolean
+  /** 主值下方常驻副行（精确值 / 较昨日等）。 */
+  sub?: ReactNode
+  subTone?: 'up' | 'down' | 'flat'
   /** 悬浮气泡文案（hover 时才出现，不占位）。 */
   desc?: string
   open?: boolean
   onToggle?: () => void
   delay?: number
+  /** 图标形态：circle = 渐变圆（默认），square = 圆角方块 + 色调浅底。 */
+  iconShape?: 'circle' | 'square'
 }): JSX.Element {
   const style: CSSProperties = { animationDelay: `${delay ?? 0}ms` }
   return (
     <button type="button" className={css.stat} style={style} data-open={open || undefined} onClick={onToggle}>
       <span className={css.statIconCol}>
-        <span className={css.statIcon} data-tone={tone}>{icon}</span>
+        <span className={css.statIcon} data-tone={tone} data-shape={iconShape === 'square' ? 'square' : undefined}>{icon}</span>
         <i className={css.statGlow} data-tone={tone} aria-hidden="true" />
       </span>
       <span className={css.statBody}>
         <span className={css.statLabel}>{label}</span>
         <span className={css.statValue} data-tone={valueWarn ? 'warn' : undefined}>{value}</span>
+        {sub !== undefined && <span className={css.statSub} data-tone={subTone !== 'flat' ? subTone : undefined}>{sub}</span>}
       </span>
       {desc !== undefined && <span className={css.statDesc} role="note">{desc}</span>}
     </button>
@@ -477,7 +538,7 @@ export function HubStatDetail({ title, rows, children }: {
 /** 分区：标题 + meta + action + 内容。 */
 export function HubSection({ title, meta, action, children }: {
   title: string
-  meta?: string
+  meta?: ReactNode
   action?: ReactNode
   children: ReactNode
 }): JSX.Element {

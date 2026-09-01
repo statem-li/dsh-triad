@@ -13,11 +13,15 @@ export interface RankRow {
   hitRate?: number | null
 }
 
-export function RankBars({ rows, maxRows = 10, nameWidth = 200 }: {
+export function RankBars({ rows, maxRows = 10, nameWidth = 200, ranked = false, dot = true }: {
   rows: RankRow[]
   /** 最多展示条数（超出折叠为「其他 N 个」）。 */
   maxRows?: number
   nameWidth?: number
+  /** 行首显示 1..N 排名序号（排行卡片样式）。 */
+  ranked?: boolean
+  /** 是否显示行首色点（排名样式下通常关闭）。 */
+  dot?: boolean
 }): JSX.Element {
   const palette = providerPalette()
   const visible = rows.slice(0, maxRows)
@@ -26,7 +30,10 @@ export function RankBars({ rows, maxRows = 10, nameWidth = 200 }: {
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {visible.map((row, i) => (
         <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: palette[i % palette.length], flex: 'none' }} />
+          {ranked && (
+            <span style={{ width: 18, flex: 'none', textAlign: 'right', fontSize: 11, fontFamily: 'ui-monospace, monospace', color: 'var(--dsw-alias-label-tertiary)' }}>{i + 1}</span>
+          )}
+          {dot && <span style={{ width: 10, height: 10, borderRadius: 3, background: palette[i % palette.length], flex: 'none' }} />}
           <span style={{ width: nameWidth, flex: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-primary)', fontSize: 12 }} title={row.label}>{row.label}</span>
           <span
             style={{ flex: 'none', fontSize: 11, lineHeight: '16px', fontFamily: 'ui-monospace, monospace', color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap' }}
@@ -35,7 +42,7 @@ export function RankBars({ rows, maxRows = 10, nameWidth = 200 }: {
             {row.hitRate !== null && row.hitRate !== undefined ? formatHitRate(row.hitRate) : '—'}
           </span>
           <div style={{ flex: 1, height: 8, borderRadius: 4, background: 'var(--dsw-alias-border-l2)', overflow: 'hidden', minWidth: 0 }}>
-            <div style={{ height: '100%', width: `${Math.max(2, (row.value / (max || 1)) * 100)}%`, background: palette[i % palette.length], borderRadius: 4 }} />
+            <div style={{ height: '100%', width: `${Math.max(2, (row.value / (max || 1)) * 100)}%`, background: palette[i % palette.length], borderRadius: 4, transition: 'width .45s cubic-bezier(.2,.8,.2,1)' }} />
           </div>
           <span style={{ flex: 'none', width: 64, textAlign: 'right', color: 'var(--dsw-alias-label-secondary)', fontSize: 12, fontFamily: 'ui-monospace, monospace' }}>{formatUnits(row.value)}</span>
         </div>

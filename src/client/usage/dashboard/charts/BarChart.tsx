@@ -8,20 +8,20 @@ export interface BarChartProps {
   /** 每个聚合周期一根柱：label（周期键）+ 三段用量。 */
   data: Array<{ label: string; input: number; output: number; cache: number }>
   height?: number
-  /** 叠加 N 周期移动均线；数据点数不足窗口时不画。默认 7，传 0 关闭。 */
+  /** 叠加 N 周期移动均线；数据点数不足窗口时不画。默认 7，传 0 关闭。
+   * 提供 baseline 时自动关闭（baseline 优先占位）。 */
   movingAverage?: number
   /** 异常日期/周期键集合：柱顶标红点，tooltip 注明倍数。 */
   anomalies?: Map<string, { multiple: number; tokens: number }>
   /** 点击异常日柱的回调（如跳转信号 tab）。 */
   onSelectAnomaly?: (label: string) => void
+  /** 系列变体：full = 输入+输出+缓存读取三色堆叠（默认）；io = 输入+输出双色（趋势页）。 */
+  variant?: 'full' | 'io'
+  /** 参考基线（如「7天平均（输入）」）：虚线 + 图例 + tooltip 行；values 与 data 等长。 */
+  baseline?: { label: string; values: Array<number | null> }
+  /** 轴/数值格式化器（默认 formatUnits，中文单位缩写）。 */
+  format?: (n: number) => string
 }
-
-/** 系列展示名与配色（cache 半透明置顶段——缓存降权，突出真实消耗）。 */
-const SERIES: Array<{ key: 'input' | 'output' | 'cache'; name: string; color: string }> = [
-  { key: 'input', name: '输入', color: 'var(--dsw-alias-state-business-primary)' },
-  { key: 'output', name: '输出', color: '#22b8cf' },
-  { key: 'cache', name: '缓存读取', color: 'var(--dsw-alias-label-tertiary)' },
-]
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace'
 
@@ -49,18 +49,35 @@ function ensureBarChartStyles(): void {
   document.head.appendChild(tag)
 }
 
+/** 系列展示名与配色（full：cache 半透明置顶段——缓存降权，突出真实消耗）。 */
+function seriesOf(variant: 'full' | 'io'): Array<{ key: 'input' | 'output' | 'cache'; name: string; color: string }> {
+  return variant === 'io'
+    ? [
+      { key: 'input', name: '输入 Tokens', color: 'var(--dsw-alias-state-business-primary)' },
+      { key: 'output', name: '输出 Tokens', color: '#7c5cf0' },
+    ]
+    : [
+      { key: 'input', name: '输入', color: 'var(--dsw-alias-state-business-primary)' },
+      { key: 'output', name: '输出', color: '#22b8cf' },
+      { key: 'cache', name: '缓存读取', color: 'var(--dsw-alias-label-tertiary)' },
+    ]
+}
+
 /**
  * BarChart — 用量趋势主图（方案 A「柱状总览」）。
  *
  * 设计要点：
- *  - 每周期一根堆叠柱：输入（品牌蓝）+ 输出（青）实心在下 = 真实消耗；
- *    缓存读取为半透明段垫在柱顶 —— 缓存命中率高（>90%）时不再压制整个图，
- *    总柱高仍是该期总量，异常日一眼可见；
- *  - 叠加移动均线（细折线，不平滑），单日波动里看真实趋势；
+ *  - 每周期一根堆叠柱：输入（品牌蓝）+ 输出（青，io 变体为紫）实心在下；
+ *    full 变体把缓存读取作为半透明段垫在柱顶 —— 缓存命中率高（>90%）时
+ *    不再压制整个图，总柱高仍是该期总量，异常日一眼可见；
+ *  - 叠加参考基线（baseline，如 7 天平均输入）或移动均线（细折线，不平滑）；
  *  - 异常日柱顶红点 + tooltip 标注中位数倍数，点击可跳信号 tab 下钻当日会话；
  *  - 无平滑、无渐变：审计语义优先精确读数。
  */
-export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onSelectAnomaly }: BarChartProps): JSX.Element {
+export function BarChart({
+  data, height = 240, movingAverage = 7, anomalies, onSelectAnomaly,
+  variant = 'full', baseline, format = formatUnits,
+}: BarChartProps): JSX.Element {
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [wrapW, setWrapW] = useState(0)
@@ -75,11 +92,12 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
     return () => { ro.disconnect() }
   }, [])
 
+  const series = seriesOf(variant)
   const W = 800, H = height
   const PAD = { l: 48, r: 16, t: 20, b: 26 }
   const renderH = wrapW > 0 ? Math.max(120, Math.round((wrapW * H) / W)) : H
 
-  const totals = data.map(d => d.input + d.output + d.cache)
+  const totals = data.map(d => variant === 'io' ? d.input + d.output : d.input + d.output + d.cache)
   const maxVal = totals.length > 0 ? Math.max(0, ...totals) : 0
   const ticks = useMemo(() => niceTicks(maxVal || 1), [maxVal])
   const chartMax = ticks[ticks.length - 1] || 1
@@ -93,7 +111,9 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
   const clampY = (v: number): number => Math.max(PAD.t, Math.min(H - PAD.b, y(v)))
 
   // 移动均线（对总量）：窗口取 min(movingAverage, n)，点数 < 窗口时不画。
+  const maEnabled = movingAverage > 0 && baseline === undefined
   const maLine = useMemo(() => {
+    if (!maEnabled) return null
     const win = movingAverage > 0 ? Math.min(movingAverage, data.length) : 0
     if (win < 2 || data.length < win) return null
     const pts = totals.map((_, i) => {
@@ -104,7 +124,21 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
     })
     return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, chartMax, movingAverage, W, H])
+  }, [data, chartMax, movingAverage, W, H, maEnabled])
+
+  // 参考基线：折线遇 null 断开（虚线），与 data 等长。
+  const baselinePath = useMemo(() => {
+    if (baseline === undefined) return null
+    let d = ''
+    let pen = false
+    baseline.values.forEach((v, i) => {
+      if (v === null || !isFinite(v)) { pen = false; return }
+      d += `${pen ? 'L' : 'M'} ${cx(i).toFixed(2)} ${clampY(v).toFixed(2)} `
+      pen = true
+    })
+    return d.trim() || null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseline, chartMax, W, H])
 
   // X 轴标签密度：约每 70px 一个，保证首尾标签。
   const labelStep = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor((W - PAD.l - PAD.r) / 70))))
@@ -117,6 +151,7 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
   const hoverTotal = hover !== null ? totals[hover.index] : 0
   // hover 期 MA 值（与 maLine 同一口径）
   const hoverMa = (() => {
+    if (!maEnabled) return null
     const win = movingAverage > 0 ? Math.min(movingAverage, data.length) : 0
     if (win < 2 || hover === null || data.length < win) return null
     const start = Math.max(0, hover.index - win + 1)
@@ -125,24 +160,35 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
     return sum / (hover.index - start + 1)
   })()
   const hoverAnomaly = hoverPoint !== undefined && anomalies !== undefined ? anomalies.get(hoverPoint.label) : undefined
+  const hoverBaseline = hover !== null && baseline !== undefined ? baseline.values[hover.index] : undefined
+
+  const legendSwatch = (s: { key: 'input' | 'output' | 'cache' }): JSX.Element => (
+    <span style={{
+      width: 8, height: 8, borderRadius: 2, flex: 'none',
+      background: s.key === 'cache'
+        ? 'color-mix(in srgb, var(--dsw-alias-label-tertiary) 22%, transparent)'
+        : series.find(x => x.key === s.key)?.color,
+      border: s.key === 'cache' ? '1px dashed var(--dsw-alias-border-l3)' : 'none',
+    }} />
+  )
 
   return (
     <div ref={wrapRef} className="dsh-bar-chart" style={{ position: 'relative', paddingTop: 16 }}>
       {/* 图例 */}
       <div className="dsh-bar-legend" style={{ position: 'absolute', top: 0, right: 0, display: 'flex', gap: 14, pointerEvents: 'none', alignItems: 'center' }}>
-        {SERIES.map(s => (
+        {series.map(s => (
           <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--dsw-alias-label-secondary)' }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: 2, flex: 'none',
-              background: s.key === 'cache'
-                ? 'color-mix(in srgb, var(--dsw-alias-label-tertiary) 22%, transparent)'
-                : s.color,
-              border: s.key === 'cache' ? '1px dashed var(--dsw-alias-border-l3)' : 'none',
-            }} />
+            {legendSwatch(s)}
             {s.name}
           </span>
         ))}
-        {maLine !== null && (
+        {baseline !== undefined && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--dsw-alias-label-secondary)' }}>
+            <span style={{ width: 12, height: 0, borderTop: '2px dashed var(--dsw-alias-label-tertiary)', flex: 'none' }} />
+            {baseline.label}
+          </span>
+        )}
+        {maEnabled && maLine !== null && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--dsw-alias-label-secondary)' }}>
             <span style={{ width: 12, height: 0, borderTop: '2px solid var(--dsw-alias-state-warn-label)', flex: 'none' }} />
             MA{Math.min(movingAverage, data.length)}
@@ -155,20 +201,25 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
         {ticks.map(v => (
           <g key={v}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(v)} y2={y(v)} stroke="var(--dsw-alias-border-l1)" strokeDasharray="4 4" />
-            <text x={PAD.l - 8} y={y(v) + 3.5} fontSize={10.5} fill="var(--dsw-alias-label-tertiary)" textAnchor="end">{formatUnits(v)}</text>
+            <text x={PAD.l - 8} y={y(v) + 3.5} fontSize={10.5} fill="var(--dsw-alias-label-tertiary)" textAnchor="end">{format(v)}</text>
           </g>
         ))}
         {/* X 轴基线 */}
         <line x1={PAD.l} x2={W - PAD.r} y1={H - PAD.b} y2={H - PAD.b} stroke="var(--dsw-alias-border-l2)" />
 
-        {/* 堆叠柱：input 底 → output 中 → cache 顶（半透明虚线边，视觉降权） */}
+        {/* 堆叠柱：input 底 → output 中（full 再 → cache 顶（半透明虚线边，视觉降权）） */}
         {data.map((d, i) => {
           const x0 = cx(i) - barW / 2
-          const segs = [
-            { v: d.input, fill: SERIES[0].color },
-            { v: d.output, fill: SERIES[1].color },
-            { v: d.cache, fill: 'color-mix(in srgb, var(--dsw-alias-label-tertiary) 22%, transparent)', dashed: true },
-          ]
+          const segs = variant === 'io'
+            ? [
+              { v: d.input, fill: series[0].color },
+              { v: d.output, fill: series[1].color },
+            ]
+            : [
+              { v: d.input, fill: series[0].color },
+              { v: d.output, fill: series[1].color },
+              { v: d.cache, fill: 'color-mix(in srgb, var(--dsw-alias-label-tertiary) 22%, transparent)', dashed: true },
+            ]
           let acc = 0
           const isAnomaly = anomalies?.has(d.label) ?? false
           return (
@@ -194,6 +245,12 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
             </g>
           )
         })}
+
+        {/* 参考基线（灰色虚线，遇 null 断开） */}
+        {baselinePath !== null && (
+          <path d={baselinePath} fill="none" stroke="var(--dsw-alias-label-tertiary)" strokeWidth={1.5}
+            strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" opacity={0.95} />
+        )}
 
         {/* 移动均线（琥珀细折线，不平滑） */}
         {maLine !== null && (
@@ -252,32 +309,33 @@ export function BarChart({ data, height = 240, movingAverage = 7, anomalies, onS
               </span>
             )}
           </div>
-          {[...SERIES].reverse().map(s => (
+          {[...series].reverse().map(s => (
             <div key={s.key} className="dsh-chart-tip-row" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: 2, flex: 'none',
-                background: s.key === 'cache'
-                  ? 'color-mix(in srgb, var(--dsw-alias-label-tertiary) 22%, transparent)'
-                  : s.color,
-                border: s.key === 'cache' ? '1px dashed var(--dsw-alias-border-l3)' : 'none',
-              }} />
+              {legendSwatch(s)}
               <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>{s.name}</span>
               <span style={{ marginLeft: 'auto', color: 'var(--dsw-alias-label-primary)', fontFamily: MONO }}>
-                {formatUnits(hoverPoint[s.key])} <span style={{ color: 'var(--dsw-alias-label-tertiary)', fontSize: 11 }}>({formatExact(hoverPoint[s.key])})</span>
+                {format(hoverPoint[s.key])} <span style={{ color: 'var(--dsw-alias-label-tertiary)', fontSize: 11 }}>({formatExact(hoverPoint[s.key])})</span>
               </span>
             </div>
           ))}
           <div style={{ borderTop: '1px solid var(--dsw-alias-border-l1)', marginTop: 5, paddingTop: 5, display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
             <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>合计</span>
             <span style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--dsw-alias-label-primary)', fontFamily: MONO }}>
-              {formatUnits(hoverTotal)} <span style={{ color: 'var(--dsw-alias-label-tertiary)', fontSize: 11 }}>({formatExact(hoverTotal)})</span>
+              {format(hoverTotal)} <span style={{ color: 'var(--dsw-alias-label-tertiary)', fontSize: 11 }}>({formatExact(hoverTotal)})</span>
             </span>
           </div>
+          {hoverBaseline !== null && hoverBaseline !== undefined && isFinite(hoverBaseline) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180, marginTop: 2 }}>
+              <span style={{ width: 12, height: 0, borderTop: '2px dashed var(--dsw-alias-label-tertiary)', flex: 'none' }} />
+              <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>{baseline?.label}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--dsw-alias-label-primary)', fontFamily: MONO }}>{format(hoverBaseline)}</span>
+            </div>
+          )}
           {hoverMa !== null && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180, marginTop: 2 }}>
               <span style={{ width: 12, height: 0, borderTop: '2px solid var(--dsw-alias-state-warn-label)', flex: 'none' }} />
               <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>MA{Math.min(movingAverage, data.length)}</span>
-              <span style={{ marginLeft: 'auto', color: 'var(--dsw-alias-label-primary)', fontFamily: MONO }}>{formatUnits(hoverMa)}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--dsw-alias-label-primary)', fontFamily: MONO }}>{format(hoverMa)}</span>
             </div>
           )}
           {hoverAnomaly !== undefined && onSelectAnomaly !== undefined && (
