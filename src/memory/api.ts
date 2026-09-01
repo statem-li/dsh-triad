@@ -132,6 +132,26 @@ async function handle(
       json(res, 200, await listView(store, url.searchParams))
       return
     }
+    if (method === 'GET' && rest === '/related') {
+      // 相关记忆：以目标条目内容为 query 走同一套 hybrid 检索（详情面板
+      // 「相关记忆」区）。排除自身与已废弃；结果截断到 limit（1-8，默认 3）。
+      const entryId = url.searchParams.get('entryId') ?? ''
+      const limitRaw = Number(url.searchParams.get('limit') ?? '3')
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(8, Math.round(limitRaw))) : 3
+      const entries = await store.readEntries()
+      const source = entries.find(entry => entry.id === entryId)
+      if (source === undefined) {
+        json(res, 200, { entries: [] })
+        return
+      }
+      const matches = searchEntries(
+        source.content,
+        entries.filter(entry => entry.id !== entryId && entry.deprecated !== true),
+        'hybrid',
+      ).slice(0, limit)
+      json(res, 200, { entries: matches.map(match => toView(match.entry)) })
+      return
+    }
     if (method === 'GET' && rest === '/projects') {
       const entries = await store.readEntries()
       json(res, 200, { projects: await mergeWorkspaces(store, await store.listProjects(entries)) })
@@ -164,6 +184,7 @@ async function handle(
         entryCount: entries.filter(entry => entry.deprecated !== true).length,
         projectCount: (await store.listProjects(entries)).length,
         todayChanges: (await store.readChanges(today)).length,
+        changeCount: (await store.readChanges()).length,
         pinnedCount: entries.filter(entry => entry.pinned).length,
         disabledCount: entries.filter(entry => entry.disabled === true).length,
         deprecatedCount: entries.filter(entry => entry.deprecated === true).length,

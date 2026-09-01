@@ -22,6 +22,7 @@ import { applyMemory } from './memory/index.js'
 import { apply as applyUsageHost } from '../vendor/usage-skill/index.js'
 import { apply as applySkillToggles } from './skill-toggles.js'
 import { applySkillHealth } from './skill-health.js'
+import { applyMcpRecommended } from './mcp-recommended.js'
 import type { MemoryConfig } from './memory/types.js'
 
 /** Stable Cordis plugin name. */
@@ -96,4 +97,16 @@ export async function apply(ctx: Context, config: TriadConfig = {}): Promise<voi
       `[dsh-triad] skill health failed to mount: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     )
   }
+
+  // ── MCP Server 推荐数据源 ──────────────────────────────────────
+  // GET /api/mcp-recommended：拉取官方/社区 MCP 目录（离线兜底内置清单）。
+  try {
+    applyMcpRecommended(ctx)
+    ctx.logger?.info?.('[dsh-triad] mcp recommended mounted')
+  } catch (error) {
+    ctx.logger?.warn?.(
+      `[dsh-triad] mcp recommended failed to mount: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    )
+  }
+
 }

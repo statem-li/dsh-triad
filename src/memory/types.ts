@@ -160,6 +160,12 @@ export interface MemoryConfig {
   injectTopK: number
   /** 全局条目数上限（超限按 importance + recency 淘汰低分条目）。 */
   entryLimit: number
+  /**
+   * 闲置自动清理（天）：自动提取条目按「最后活跃时间」清理——最后命中时间
+   * （从未命中则用创建时间）距今满 N 天的条目在每日编译时删除。置顶 / 已确认 /
+   * 手动 / 禁用豁免（用户显式意图或价值确认）。0 = 关闭。
+   */
+  pruneNeverHitDays: number
 
   // ── schema v3：语义检索（embedding）配置 ────────────────────────────
   /**
@@ -201,6 +207,7 @@ export const DEFAULT_CONFIG: MemoryConfig = {
   logApiRequests: false,
   injectTopK: 8,
   entryLimit: 500,
+  pruneNeverHitDays: 21,
   embeddingProvider: 'off',
   embeddingBaseUrl: '',
   embeddingModel: 'text-embedding-3-small',
@@ -281,6 +288,7 @@ export const CONFIG_NUMBER_BOUNDS = {
   consolidateTimeoutMs: { min: 5000, max: 600_000, int: true, step: 5000 },
   injectTopK: { min: 1, max: 50, int: true, step: 1 },
   entryLimit: { min: 50, max: 100_000, int: true, step: 50 },
+  pruneNeverHitDays: { min: 0, max: 3650, int: true, step: 1 },
 } as const satisfies Record<string, { min: number; max: number; int: boolean; step: number }>
 
 /** 可调数值字段名。 */

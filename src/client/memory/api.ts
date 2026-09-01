@@ -73,6 +73,8 @@ export interface MemorySummaryResponse {
   entryCount: number
   projectCount: number
   todayChanges: number
+  /** 全部变更总数（左栏「变更」导航计数；旧 host 缺失时由面板按 todayChanges 兜底）。 */
+  changeCount?: number
   /**
    * 以下计数由较新的 host 提供。client 与 host 分别部署——插件更新后 client
    * 刷新页面即生效，host 要重启 DSH 才换新；这段窗口里字段缺失，面板据 undefined
@@ -83,6 +85,7 @@ export interface MemorySummaryResponse {
   deprecatedCount?: number
   longtermCount?: number
   globalCount?: number
+  revisionCount?: number
 }
 
 /** 变更响应。 */
@@ -136,6 +139,8 @@ export interface MemoryConfigView {
   consolidateModel?: string
   injectTopK?: number
   entryLimit?: number
+  /** 从未命中自动清理（天）0=关闭；面板设置「编译与衰减」组。 */
+  pruneNeverHitDays?: number
   dailyCompileEnabled?: boolean
   consolidateEnabled?: boolean
   logApiRequests?: boolean
@@ -194,10 +199,12 @@ function normalizeSummary(summary: MemorySummaryResponse): MemorySummaryResponse
     entryCount: num(summary.entryCount),
     projectCount: num(summary.projectCount),
     todayChanges: num(summary.todayChanges),
+    changeCount: opt(summary.changeCount),
     pinnedCount: opt(summary.pinnedCount),
     disabledCount: opt(summary.disabledCount),
     longtermCount: opt(summary.longtermCount),
     globalCount: opt(summary.globalCount),
+    revisionCount: opt(summary.revisionCount),
   }
 }
 
@@ -233,6 +240,8 @@ export interface MemoryApi {
   tags: () => Promise<MemoryTagsResponse>
   changes: (date?: string) => Promise<MemoryChangesResponse>
   summary: () => Promise<MemorySummaryResponse>
+  /** 相关记忆（详情面板）：以条目内容检索 top-N 相似条目（不含自身/已废弃）。 */
+  related: (entryId: string, limit?: number) => Promise<{ entries: MemoryEntryView[] }>
   pin: (entryId: string, pinned: boolean) => Promise<{ ok: boolean; entry: MemoryEntryView }>
   enable: (entryId: string, enabled: boolean) => Promise<{ ok: boolean; entry: MemoryEntryView }>
   update: (entryId: string, patch: {
@@ -298,6 +307,9 @@ export function createMemoryApi(): MemoryApi {
     tags: () => getJson<MemoryTagsResponse>('/tags'),
     changes: (date) => getJson<MemoryChangesResponse>(`/changes${date !== undefined ? `?date=${encodeURIComponent(date)}` : ''}`),
     summary: () => getJson<MemorySummaryResponse>('/summary').then(normalizeSummary),
+    related: (entryId, limit) => getJson<{ entries: MemoryEntryView[] }>(
+      `/related?entryId=${encodeURIComponent(entryId)}${limit !== undefined ? `&limit=${limit}` : ''}`,
+    ).then(response => ({ entries: (response.entries ?? []).map(normalizeEntry) })),
     pin: (entryId, pinned) => sendJson<{ ok: boolean; entry: MemoryEntryView }>('/pin', { entryId, pinned }).then(withEntry),
     enable: (entryId, enabled) => sendJson<{ ok: boolean; entry: MemoryEntryView }>('/enable', { entryId, enabled }).then(withEntry),
     update: (entryId, patch) => sendJson<{ ok: boolean; entry: MemoryEntryView }>('/update', { entryId, ...patch }).then(withEntry),

@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { MemoryConfig } from '../types.js'
 import { compileAll, promoteEntries, writeDailyLog } from './compile.js'
 import { consolidateAll } from './consolidate.js'
-import { decayImportance, shouldEvict } from './scoring.js'
+import { decayImportance, daysSince, shouldEvict } from './scoring.js'
 import {
   localDate,
   nowIso,
@@ -66,10 +66,12 @@ export function createTicker(
 
     const days = last === null ? 1 : Math.max(1, Math.floor((Date.parse(today) - Date.parse(last)) / 86_400_000))
 
-    // 1-3) 衰减 → 折叠 → 滚出 → 原子写回（走 store 写队列，避免与提取/裁决并发覆盖）。
-    // deprecated 条目（软废弃）跳过全部规则：不衰减、不晋升、不滚出（保留数据与状态）。
+    // 1-4) 衰减 → 折叠 → 滚出 → 闲置清理 → 原子写回（走 store 写队列，
+    // 避免与提取/裁决并发覆盖）。deprecated 条目（软废弃）跳过全部规则：
+    // 不衰减、不晋升、不滚出、不清理（保留数据与状态）。
     let promoted: Array<import('../types.ts').MemoryEntry> = []
     let evicted: Array<import('../types.ts').MemoryEntry> = []
+    let pruned: Array<import('../types.ts').MemoryEntry> = []
     await store.replaceEntries(entries => {
       const live: Array<import('../types.ts').MemoryEntry> = []
       const frozen: Array<import('../types.ts').MemoryEntry> = []
@@ -89,19 +91,34 @@ export function createTicker(
         if (shouldEvict(entry, config.compileThreshold)) evicted.push(entry)
         else kept.push(entry)
       }
+      // 闲置清理：自动提取条目按「最后活跃时间」清理——最后命中时间（从未
+      // 命中则用创建时间）距今满 N 天即删除。这样「命中过一次就永远躺着」的
+      // 条目也会被清；置顶 / 已确认 / 手动 / 禁用豁免（用户显式意图、价值确认、
+      // 主动创建、显式冻结），不参与自动清理。
+      pruned = []
+      if (config.pruneNeverHitDays > 0) {
+        pruned = kept.filter(entry => {
+          if (entry.source !== 'extract') return false
+          if (entry.pinned === true || entry.verified === true || entry.disabled === true) return false
+          const idleSince = entry.lastHitAt ?? entry.createdAt
+          return daysSince(idleSince) >= config.pruneNeverHitDays
+        })
+      }
+      const prunedIds = new Set(pruned.map(entry => entry.id))
+      const survivor = [...promoted, ...kept.filter(entry => !prunedIds.has(entry.id)), ...frozen]
       // 预算治理：条目数超上限时，按 importance+recency 淘汰低分条目（pinned 豁免；
       // deprecated 条目已冻结，不参与淘汰）。
-      let survivor = [...promoted, ...kept, ...frozen]
-      if (survivor.length > config.entryLimit) {
-        const overflow = survivor
+      let finalSurvivor = survivor
+      if (finalSurvivor.length > config.entryLimit) {
+        const overflow = finalSurvivor
           .filter(entry => !entry.pinned && entry.deprecated !== true)
           .sort((a, b) => (a.importance - b.importance) || a.updatedAt.localeCompare(b.updatedAt))
-          .slice(0, survivor.length - config.entryLimit)
+          .slice(0, finalSurvivor.length - config.entryLimit)
         const overflowIds = new Set(overflow.map(entry => entry.id))
         evicted.push(...overflow)
-        survivor = survivor.filter(entry => !overflowIds.has(entry.id))
+        finalSurvivor = finalSurvivor.filter(entry => !overflowIds.has(entry.id))
       }
-      return survivor
+      return finalSurvivor
     })
 
     // 4) 变更流。
@@ -123,11 +140,20 @@ export function createTicker(
         summary: `低分条目滚出：${summarize(entry.content)}`,
       })
     }
+    for (const entry of pruned) {
+      await store.appendChange({
+        action: 'delete',
+        entryId: entry.id,
+        scope: entry.scope,
+        projectHash: entry.projectHash,
+        summary: `闲置 ${config.pruneNeverHitDays} 天自动清理：${summarize(entry.content)}`,
+      })
+    }
 
     // 5) 产物重编译 + daily 日志。
     await compileAll(store, config)
     await writeDailyLog(store)
-    ctx.logger?.debug?.(`[dsh-memory] daily compile done (promoted=${promoted.length}, evicted=${evicted.length})`)
+    ctx.logger?.debug?.(`[dsh-memory] daily compile done (promoted=${promoted.length}, evicted=${evicted.length}, pruned=${pruned.length})`)
 
     // 6) LLM 语义整理（Memory Dream）：合并去重 / 精炼重写 / 删除 / 提升长期。
     //    与规则整理正交：规则处理「分数」，本步处理「语义」。失败不阻塞（内部吞错）。

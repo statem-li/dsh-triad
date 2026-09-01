@@ -27,6 +27,7 @@ const BOUNDS = {
   consolidateTimeoutMs: { min: 5000, max: 600000, step: 5000 },
   injectTopK: { min: 1, max: 50, step: 1 },
   entryLimit: { min: 50, max: 100000, step: 50 },
+  pruneNeverHitDays: { min: 0, max: 3650, step: 1 },
 } as const
 
 /** 数值字段名。 */
@@ -227,6 +228,7 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset, listMod
         <NumberRow label={t('cfgDecayLambda')} hint={t('cfgDecayLambdaHint')} field="decayLambda" value={num('decayLambda')} t={t} onCommit={setNum('decayLambda')} />
         <NumberRow label={t('cfgHitBonus')} field="hitBonus" value={num('hitBonus')} t={t} onCommit={setNum('hitBonus')} />
         <NumberRow label={t('cfgEntryLimit')} hint={t('cfgEntryLimitHint')} field="entryLimit" value={num('entryLimit')} t={t} onCommit={setNum('entryLimit')} />
+        <NumberRow label={t('cfgPruneNeverHit')} hint={t('cfgPruneNeverHitHint')} field="pruneNeverHitDays" value={num('pruneNeverHitDays') ?? 21} t={t} onCommit={setNum('pruneNeverHitDays')} />
       </section>
 
       <section className={css.settingsGroup}>

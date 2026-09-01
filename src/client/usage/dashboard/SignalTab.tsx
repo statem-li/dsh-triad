@@ -1,21 +1,17 @@
 /**
- * SignalTab — 信号 tab：Agent 效率与归因 / 用量信号 / 30 日 Token 预算。
+ * SignalTab — 信号 tab（Skills Hub 风格）。
  *
- * 视觉对齐 DSH 设置页语言（与 TrendTab 同一套设计令牌）：
- *  - 效率归因：`.editor` 填充面内的统计行（竖线分隔），底部 Top 路由分布小字；
- *  - 用量信号：`.rowCard` 描边卡内统计行 + 异常日红色警示条（可下钻当日会话）；
- *  - 预算卡：数值输入 + 保存（存本机 storages/usage-budget.json，0 关闭），
- *    已设预算时显示预计 30 日用量的进度条。
- *
- * 数据：GET /api/usage-stats/signal?days=30（尾随自然日窗口聚合）；
- * 下钻 GET /api/usage-stats/day-sessions?date=YYYY-MM-DD；预算 POST 同名端点。
+ * 统计行（7日日均 / 预计30日 / 昨日用量 / 活跃日中位数，宽卡 + 悬浮 desc +
+ * 点击展开）+ 内容区：Agent 效率归因 / 用量信号（异常日下钻）/ 30 日预算。
  */
 
 import { useEffect, useState } from 'react'
 import { usageApi, type DaySessionRow, type SignalPayload } from './api'
-import { CardHead, Stat, editorFace, MONO, rowCard } from './TrendTab'
+import { Stat, editorFace, MONO, rowCard } from './TrendTab'
 import { formatExact, formatHitRate, formatUnits } from './format'
 import { ErrorCard } from './primitives/ErrorCard'
+import { css, HubStat, HubStatDetail, HubSection, tokensIcon, daysIcon, hitIcon, callsIcon } from './hub'
+import { modalStaggerClass } from '../../modal-animation'
 
 /** 时间戳 → 当日本地 HH:mm。 */
 function clockOf(ts: number): string {
@@ -39,6 +35,9 @@ export function SignalTab(): JSX.Element {
   const [signal, setSignal] = useState<SignalPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [retryTick, setRetryTick] = useState(0)
+
+  // ── 统计卡：点开哪张（null = 全收） ──
+  const [openStat, setOpenStat] = useState<string | null>(null)
 
   // ── 异常日下钻状态 ──
   const [openDate, setOpenDate] = useState<string | null>(null)
@@ -127,158 +126,236 @@ export function SignalTab(): JSX.Element {
   const budgetUsed = budgetActive && sig.projected30 > 0 ? Math.min(1, sig.projected30 / budget) : 0
   const budgetOver = budgetActive && sig.projected30 > budget
 
+  const toggleStat = (key: string): void => { setOpenStat(v => v === key ? null : key) }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* ── Agent 效率与归因：`.editor` 填充面统计行 ── */}
-      <div style={editorFace}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-          <Stat first label="模型尝试次数" value={formatUnits(efficiency.requests)} exact={formatExact(efficiency.requests)} />
-          <Stat label="次均 Tokens" value={efficiency.tokensPerRequest === null ? '—' : formatUnits(efficiency.tokensPerRequest)}
-            sub={`合计 ${formatUnits(efficiency.tokens)}`} />
-          <Stat label="缓存命中率" value={formatHitRate(efficiency.cacheHitRate)} />
-          <Stat label="压缩占比" value={percentOf(efficiency.compactedShare)}
-            sub={efficiency.compactedTokens > 0 ? `压缩 ${formatUnits(efficiency.compactedTokens)}` : '无压缩记录'} />
-          <Stat label="Top 模型占比" value={percentOf(efficiency.topRouteShare)}
-            sub={topRoutesText !== '' ? undefined : '暂无数据'} />
-        </div>
-        {topRoutesText !== '' && (
-          <div style={{ marginTop: 10, fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Top 模型：{topRoutesText}
-          </div>
-        )}
+    <>
+      {/* ── 统计行：7日日均 / 预计30日 / 昨日用量 / 活跃日中位数 ── */}
+      <div className={css.statsRow}>
+        <HubStat
+          tone="blue"
+          icon={tokensIcon(18)}
+          label="7 日日均"
+          value={formatUnits(sig.dailyAvg7)}
+          desc={`精确 ${formatExact(Math.round(sig.dailyAvg7))}`}
+          open={openStat === 'avg7'}
+          onToggle={() => { toggleStat('avg7') }}
+          delay={0}
+        />
+        <HubStat
+          tone="orange"
+          icon={daysIcon(18)}
+          label="预计 30 日"
+          value={formatUnits(sig.projected30)}
+          desc={budgetActive ? `预算 ${formatUnits(budget)} Token` : '尚未设置 30 日预算'}
+          valueWarn={budgetOver}
+          open={openStat === 'projected'}
+          onToggle={() => { toggleStat('projected') }}
+          delay={40}
+        />
+        <HubStat
+          tone="violet"
+          icon={hitIcon(18)}
+          label="昨日用量"
+          value={formatUnits(sig.yesterdayTokens)}
+          desc={`${sig.yesterdayDate} · 相对中位数 ${multipleOf(sig.yesterdayMultiple)}`}
+          open={openStat === 'yesterday'}
+          onToggle={() => { toggleStat('yesterday') }}
+          delay={80}
+        />
+        <HubStat
+          tone="green"
+          icon={callsIcon(18)}
+          label="活跃日中位数"
+          value={sig.activeMedian === null ? '—' : formatUnits(sig.activeMedian)}
+          desc={`近 ${sig.activeDays} 个活跃日参与基线`}
+          open={openStat === 'median'}
+          onToggle={() => { toggleStat('median') }}
+          delay={120}
+        />
       </div>
 
-      {/* ── 用量信号：预测与监控 + 异常日警示 ── */}
-      <div style={rowCard}>
-        <CardHead name="用量信号" meta={`近 ${sig.activeDays} 个活跃日参与基线`} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-          <Stat first label="7 日日均" value={formatUnits(sig.dailyAvg7)} exact={formatExact(Math.round(sig.dailyAvg7))} />
-          <Stat label="预计 30 日" value={formatUnits(sig.projected30)} exact={formatExact(Math.round(sig.projected30))} />
-          <Stat label="昨日用量" value={formatUnits(sig.yesterdayTokens)} sub={sig.yesterdayDate} />
-          <Stat label="昨日 vs 中位数" value={multipleOf(sig.yesterdayMultiple)} />
-          <Stat label="活跃日中位数" value={sig.activeMedian === null ? '—' : formatUnits(sig.activeMedian)} />
-        </div>
+      {openStat !== null && (
+        <HubStatDetail
+          title={`${openStat === 'avg7' ? '7 日日均' : openStat === 'projected' ? '预计 30 日' : openStat === 'yesterday' ? '昨日用量' : '活跃日中位数'} · 尾随自然日窗口`}
+          rows={openStat === 'avg7'
+            ? [
+              { label: '近 7 日日均', value: formatUnits(sig.dailyAvg7) },
+              { label: '活跃日', value: `${sig.activeDays} 天` },
+            ]
+            : openStat === 'projected'
+              ? [
+                { label: '预计 30 日', value: formatUnits(sig.projected30) },
+                { label: '阈值', value: formatUnits(sig.anomalyThreshold) },
+              ]
+              : openStat === 'yesterday'
+                ? [
+                  { label: '昨日用量', value: formatUnits(sig.yesterdayTokens) },
+                  { label: '相对中位数', value: multipleOf(sig.yesterdayMultiple) },
+                ]
+                : [
+                  { label: '活跃日中位数', value: sig.activeMedian === null ? '—' : formatUnits(sig.activeMedian) },
+                  { label: '关注日数', value: `${sig.activeDays} 天` },
+                ]}
+        />
+      )}
 
-        {anomalies.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {anomalies.map(day => (
-              <div key={day.date} role="alert" style={{
-                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                padding: '8px 12px', borderRadius: 8,
-                border: '1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent)',
-                background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 7%, transparent)',
-              }}>
-                <span style={{ width: 8, height: 8, borderRadius: 4, flex: 'none', background: 'var(--dsw-alias-state-error-primary)' }} />
-                <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-primary)' }}>
-                  <span style={{ fontFamily: MONO, fontWeight: 600, color: 'var(--dsw-alias-state-error-primary)' }}>{day.date}</span>
-                  {' '}使用 <span style={{ fontFamily: MONO, fontWeight: 600, color: 'var(--dsw-alias-state-error-primary)' }}>{formatUnits(day.tokens)}</span>
-                  {' '}Token，是活跃日中位数的{' '}
-                  <span style={{ fontFamily: MONO, fontWeight: 600, color: 'var(--dsw-alias-state-error-primary)' }}>{multipleOf(day.multiple)}</span>
-                  {' '}倍
-                </span>
-                <button type="button" onClick={() => toggleDay(day.date)} style={{
-                  marginLeft: 'auto', height: 28, padding: '0 10px',
-                  border: `1px solid ${openDate === day.date ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-border-l2)'}`,
-                  borderRadius: 14, background: openDate === day.date ? 'color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent)' : 'transparent',
-                  cursor: 'pointer', fontSize: 12, lineHeight: '18px',
-                  color: openDate === day.date ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-label-primary)',
-                }}>
-                  {openDate === day.date ? '收起会话' : '查看异常日会话'}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {openDate !== null && (
-          <div style={{ borderRadius: 12, background: 'var(--dsw-alias-bg-module-platform)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }}>
-              {openDate} 的会话用量（按 Token 降序{dayLoading ? ' · 加载中…' : ''}）
+      <div className={`${css.mainScroll} ${modalStaggerClass}`}>
+        {/* ── Agent 效率与归因 ── */}
+        <HubSection title="Agent 效率与归因" meta={`近 ${sig.activeDays} 个活跃日参与基线`}>
+          <div style={editorFace}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+              <Stat first label="模型尝试次数" value={formatUnits(efficiency.requests)} exact={formatExact(efficiency.requests)} />
+              <Stat label="次均 Tokens" value={efficiency.tokensPerRequest === null ? '—' : formatUnits(efficiency.tokensPerRequest)}
+                sub={`合计 ${formatUnits(efficiency.tokens)}`} />
+              <Stat label="缓存命中率" value={formatHitRate(efficiency.cacheHitRate)} />
+              <Stat label="压缩占比" value={percentOf(efficiency.compactedShare)}
+                sub={efficiency.compactedTokens > 0 ? `压缩 ${formatUnits(efficiency.compactedTokens)}` : '无压缩记录'} />
+              <Stat label="Top 模型占比" value={percentOf(efficiency.topRouteShare)}
+                sub={topRoutesText !== '' ? undefined : '暂无数据'} />
             </div>
-            {dayError !== null && (
-              <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-error-primary)' }}>{dayError}</div>
+            {topRoutesText !== '' && (
+              <div style={{ marginTop: 10, fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Top 模型：{topRoutesText}
+              </div>
             )}
-            {dayRows !== null && dayRows.length === 0 && (
-              <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>该日没有可用量记录。</div>
+          </div>
+        </HubSection>
+
+        {/* ── 用量信号：预测与监控 + 异常日警示 ── */}
+        <HubSection title="用量信号" meta="异常日可下钻当日会话">
+          <div style={rowCard}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+              <Stat first label="7 日日均" value={formatUnits(sig.dailyAvg7)} exact={formatExact(Math.round(sig.dailyAvg7))} />
+              <Stat label="预计 30 日" value={formatUnits(sig.projected30)} exact={formatExact(Math.round(sig.projected30))} />
+              <Stat label="昨日用量" value={formatUnits(sig.yesterdayTokens)} sub={sig.yesterdayDate} />
+              <Stat label="昨日 vs 中位数" value={multipleOf(sig.yesterdayMultiple)} />
+              <Stat label="活跃日中位数" value={sig.activeMedian === null ? '—' : formatUnits(sig.activeMedian)} />
+            </div>
+
+            {anomalies.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {anomalies.map(day => (
+                  <div key={day.date} role="alert" style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    padding: '8px 12px', borderRadius: 8,
+                    border: '1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 35%, transparent)',
+                    background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 7%, transparent)',
+                  }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, flex: 'none', background: 'var(--dsw-alias-state-error-primary)' }} />
+                    <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-primary)' }}>
+                      <span style={{ fontFamily: MONO, fontWeight: 600, color: 'var(--dsw-alias-state-error-primary)' }}>{day.date}</span>
+                      {' '}使用 <span style={{ fontFamily: MONO, fontWeight: 600, color: 'var(--dsw-alias-state-error-primary)' }}>{formatUnits(day.tokens)}</span>
+                      {' '}Token，是活跃日中位数的{' '}
+                      <span style={{ fontFamily: MONO, fontWeight: 600, color: 'var(--dsw-alias-state-error-primary)' }}>{multipleOf(day.multiple)}</span>
+                      {' '}倍
+                    </span>
+                    <button type="button" onClick={() => toggleDay(day.date)} style={{
+                      marginLeft: 'auto', height: 28, padding: '0 10px',
+                      border: `1px solid ${openDate === day.date ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-border-l2)'}`,
+                      borderRadius: 14, background: openDate === day.date ? 'color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent)' : 'transparent',
+                      cursor: 'pointer', fontSize: 12, lineHeight: '18px',
+                      color: openDate === day.date ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-label-primary)',
+                    }}>
+                      {openDate === day.date ? '收起会话' : '查看异常日会话'}
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
-            {dayRows !== null && dayRows.map(row => (
-              <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid var(--dsw-alias-border-l1)', minWidth: 0 }}>
-                <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {row.title ?? '未命名会话'}
-                </span>
-                {row.firstAt !== null && row.lastAt !== null && (
-                  <span style={{ flex: 'none', fontSize: 11, fontFamily: MONO, color: 'var(--dsw-alias-label-tertiary)' }}>
-                    {clockOf(row.firstAt)}–{clockOf(row.lastAt)}
-                  </span>
+
+            {openDate !== null && (
+              <div style={{ borderRadius: 12, background: 'var(--dsw-alias-bg-module-platform)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }}>
+                  {openDate} 的会话用量（按 Token 降序{dayLoading ? ' · 加载中…' : ''}）
+                </div>
+                {dayError !== null && (
+                  <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-error-primary)' }}>{dayError}</div>
                 )}
-                <button type="button" title={`复制会话 ID：${row.id}`} onClick={() => { void navigator.clipboard?.writeText(row.id).catch(() => {}) }} style={{
-                  flex: 'none', height: 22, padding: '0 8px', borderRadius: 11,
-                  border: '1px solid var(--dsw-alias-border-l2)', background: 'transparent',
-                  cursor: 'pointer', fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)',
-                }}>复制 ID</button>
-                <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 12, fontFamily: MONO, color: 'var(--dsw-alias-label-primary)' }}>
-                  {formatUnits(row.tokens)}
-                </span>
-                <span style={{ flex: 'none', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' }}>
-                  {formatUnits(row.requests)} 次
-                </span>
+                {dayRows !== null && dayRows.length === 0 && (
+                  <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>该日没有可用量记录。</div>
+                )}
+                {dayRows !== null && dayRows.map(row => (
+                  <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '1px solid var(--dsw-alias-border-l1)', minWidth: 0 }}>
+                    <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--dsw-alias-label-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {row.title ?? '未命名会话'}
+                    </span>
+                    {row.firstAt !== null && row.lastAt !== null && (
+                      <span style={{ flex: 'none', fontSize: 11, fontFamily: MONO, color: 'var(--dsw-alias-label-tertiary)' }}>
+                        {clockOf(row.firstAt)}–{clockOf(row.lastAt)}
+                      </span>
+                    )}
+                    <button type="button" title={`复制会话 ID：${row.id}`} onClick={() => { void navigator.clipboard?.writeText(row.id).catch(() => {}) }} style={{
+                      flex: 'none', height: 22, padding: '0 8px', borderRadius: 11,
+                      border: '1px solid var(--dsw-alias-border-l2)', background: 'transparent',
+                      cursor: 'pointer', fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)',
+                    }}>复制 ID</button>
+                    <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 12, fontFamily: MONO, color: 'var(--dsw-alias-label-primary)' }}>
+                      {formatUnits(row.tokens)}
+                    </span>
+                    <span style={{ flex: 'none', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' }}>
+                      {formatUnits(row.requests)} 次
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+        </HubSection>
 
-      {/* ── 30 日 Token 预算：本机保存，0 关闭 ── */}
-      <div style={rowCard}>
-        <CardHead name="30 日 Token 预算" meta="保存在本机 DSH 设置中" />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <input
-            type="number"
-            min={0}
-            step={1_000_000}
-            placeholder="例如 2600000000"
-            value={budgetDraft}
-            onChange={(e) => { setBudgetDraft(e.target.value); setBudgetNote(null) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') saveBudget() }}
-            style={{
-              width: 220, height: 32, padding: '0 10px', fontSize: 14, lineHeight: '22px',
-              borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)',
-              background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
-              boxSizing: 'border-box', outline: 'none', fontFamily: MONO,
-            }}
-          />
-          <button type="button" disabled={budgetSaving} onClick={saveBudget} style={{
-            height: 32, padding: '0 16px', borderRadius: 16,
-            border: '1px solid transparent', cursor: budgetSaving ? 'default' : 'pointer',
-            background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-foreground)',
-            fontSize: 13, lineHeight: '20px', opacity: budgetSaving ? 0.6 : 1,
-          }}>{budgetSaving ? '保存中…' : '保存'}</button>
-          {budgetNote !== null && (
-            <span style={{ fontSize: 12, lineHeight: '18px', color: budgetNote.ok ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-error-primary)' }}>
-              {budgetNote.text}
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)' }}>
-          预算按自然月滚动对照「预计 30 日 Tokens」估算；填 0 可关闭。当前：{budgetActive ? `${formatUnits(budget!)} Token` : '尚未设置预算'}
-        </div>
-        {budgetActive && sig.projected30 > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ height: 6, borderRadius: 3, background: 'var(--dsw-alias-bg-module-platform)', overflow: 'hidden' }}>
-              <div style={{
-                width: `${Math.round(budgetUsed * 100)}%`, height: '100%', borderRadius: 3,
-                background: budgetOver ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-state-business-primary)',
-                transition: 'width .3s ease',
-              }} />
+        {/* ── 30 日 Token 预算 ── */}
+        <HubSection title="30 日 Token 预算" meta="保存在本机 DSH 设置中">
+          <div style={rowCard}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <input
+                type="number"
+                min={0}
+                step={1_000_000}
+                placeholder="例如 2600000000"
+                value={budgetDraft}
+                onChange={(e) => { setBudgetDraft(e.target.value); setBudgetNote(null) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveBudget() }}
+                style={{
+                  width: 220, height: 32, padding: '0 10px', fontSize: 14, lineHeight: '22px',
+                  borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)',
+                  background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)',
+                  boxSizing: 'border-box', outline: 'none', fontFamily: MONO,
+                }}
+              />
+              <button type="button" disabled={budgetSaving} onClick={saveBudget} style={{
+                height: 32, padding: '0 16px', borderRadius: 16,
+                border: '1px solid transparent', cursor: budgetSaving ? 'default' : 'pointer',
+                background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-foreground)',
+                fontSize: 13, lineHeight: '20px', opacity: budgetSaving ? 0.6 : 1,
+              }}>{budgetSaving ? '保存中…' : '保存'}</button>
+              {budgetNote !== null && (
+                <span style={{ fontSize: 12, lineHeight: '18px', color: budgetNote.ok ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-error-primary)' }}>
+                  {budgetNote.text}
+                </span>
+              )}
             </div>
-            <div style={{ fontSize: 12, lineHeight: '18px', color: budgetOver ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)' }}>
-              {budgetOver
-                ? `按近 7 日节奏，预计 30 日用量（${formatUnits(sig.projected30)}）将超出预算 ${Math.round((sig.projected30 / budget! - 1) * 100)}%`
-                : `预计 30 日用量约为预算的 ${Math.round(budgetUsed * 100)}%`}
+            <div style={{ fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)' }}>
+              预算按自然月滚动对照「预计 30 日 Tokens」估算；填 0 可关闭。当前：{budgetActive ? `${formatUnits(budget!)} Token` : '尚未设置预算'}
             </div>
+            {budgetActive && sig.projected30 > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ height: 6, borderRadius: 3, background: 'var(--dsw-alias-bg-module-platform)', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${Math.round(budgetUsed * 100)}%`, height: '100%', borderRadius: 3,
+                    background: budgetOver ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-state-business-primary)',
+                    transition: 'width .3s ease',
+                  }} />
+                </div>
+                <div style={{ fontSize: 12, lineHeight: '18px', color: budgetOver ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)' }}>
+                  {budgetOver
+                    ? `按近 7 日节奏，预计 30 日用量（${formatUnits(sig.projected30)}）将超出预算 ${Math.round((sig.projected30 / budget! - 1) * 100)}%`
+                    : `预计 30 日用量约为预算的 ${Math.round(budgetUsed * 100)}%`}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </HubSection>
       </div>
-    </div>
+    </>
   )
 }

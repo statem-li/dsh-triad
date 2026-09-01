@@ -128,12 +128,17 @@ export interface PopoverShellProps {
   ariaLabel: string
   /** 实底卡片：玻璃质感开启时也不透明（内容密集的数据面板用，避免背景穿透干扰阅读）。 */
   solid?: boolean
+  /**
+   * 底部留白（px）：卡片最大高度在视口余量基础上再减去该值，
+   * 让面板底部与视口边缘保持距离（内容区自行滚动）。默认 0。
+   */
+  bottomInset?: number
   children: ReactNode
 }
 
 /** 渲染「右侧滑出」卡片（含遮罩）。内容自带头部时无需再用 PshHead。 */
 export function PopoverShell({
-  closing, onClose, anchor, width = 560, size, onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, children,
+  closing, onClose, anchor, width = 560, size, onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, bottomInset = 0, children,
 }: PopoverShellProps): JSX.Element {
   // 视口尺寸走 state：窗口缩放时 fill/夹紧尺寸实时跟随（否则缩小窗口后卡片仍按旧尺寸布局）。
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight })
@@ -153,7 +158,7 @@ export function PopoverShell({
     const left = Math.round(anchor.left)
     const fill = size?.fill === true
     const top = fill ? 12 : Math.max(8, Math.min(Math.round(anchor.top), vh - 200))
-    const availH = vh - top - 12
+    const availH = Math.max(240, vh - top - 12 - bottomInset)
     const availW = vw - left - 12
     style = {
       left,

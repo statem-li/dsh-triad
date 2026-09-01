@@ -1,6 +1,6 @@
 # dsh-triad
 
-DSH 三合一扩展插件：**用量工作台 · 技能管理 · 长期记忆引擎**。
+DSH 扩展插件：**用量工作台 · 技能管理（含 MCP Server 管理）· 长期记忆引擎**。
 
 从 [statem-li/dsh-webui](https://github.com/statem-li/dsh-webui) v0.5.1 拆出这三个模块，
 按 DSH `0.1.2-alpha.1` 的现行契约重写成单个插件。**零 DSH 源码改动**——全部通过
@@ -44,27 +44,38 @@ dsh plugin --profile web remove dsh-triad
 | 自动抽取 | 挂 `session/event`，每 `extractEveryTurns` 轮用 LLM 抽一次 |
 | 语义检索 | 可选 embedding provider；关闭时退化为 TF-IDF 式打分 |
 | 自动注入 | 挂 `agent/pre-step`，`{ prepend: true }`，预算 `injectTokenBudget` |
-| 每日整合 | 衰减 + 命中加权 + 条目上限 |
+| 每日整合 | 衰减 + 命中加权 + 条目上限 + **闲置自动清理**（`pruneNeverHitDays`，默认 21 天：最后命中/创建距今满 N 天删除；置顶/已确认/手动/禁用豁免） |
 | 语义整理 | 增量小批（默认最近更新 20 条/次，对齐 ReMe auto_dream 策略）+ 整理前快照 + 变更流汇总记录 + 整理专用模型（面板下拉，可选） + `consolidate.log` 诊断 |
+| 相关记忆 | 详情面板「相关记忆」区：以目标条目内容为 query 走同一套 hybrid 检索，排除自身与已废弃（`GET /api/dsh-memory/related`） |
 
 工具：`memory_search` `memory_remember` `memory_pin` `memory_tag` `memory_forget`
 `memory_revise` `memory_retire` `memory_consolidate`
 
-路由：`/api/dsh-memory/*`（含 `/models` 模型目录）
+路由：`/api/dsh-memory/*`（含 `/models` 模型目录、`/related` 相关记忆）
 
 ### 用量
 
 四个 Tab：**用量 / 趋势 / 账户 / 信号**，含面积图、环形图、仪表、热力图、排名条。
+与技能面板共用同一套 Skills Hub 风格共享视觉层（`usage/dashboard/hub.tsx`：
+左侧分类导航 + 圆形渐变统计卡 + 搜索/排序工具栏 + 胶囊分段按钮）。
 
 路由：`/api/usage-stats/{usage,balance,account,credentials,providers,subscriptions,signal,budget,day-sessions,deepseek-billing}`
 
 ### 技能
 
-`/` 触发源支持**二级分组**（`/<集合名>:` 后列出该集合下技能，含「散装技能」）、
-技能工具行、管理面板，以及**按 Agent 预设的开关覆盖**——同一个技能可以对
-`standard` 开、对 `code` 关。
+面板顶部 **SKILL / MCP** 双层顶层 tab：
 
-路由：`/api/skill-manager/*`（集合管理）、`/api/skill-toggles/*`（开关与预设覆盖）
+- **SKILL**：`/` 触发源支持**二级分组**（`/<集合名>:` 后列出该集合下技能，含「散装技能」）、
+  技能工具行、管理面板，以及**按 Agent 预设的开关覆盖**——同一个技能可以对
+  `standard` 开、对 `code` 关。
+- **MCP**：MCP Server 管理——添加/启停/会话自启动（localStorage 持久化）、
+  **推荐 MCP Server 目录**（`GET /api/mcp-recommended`：官方 modelcontextprotocol/servers
+  + 社区 MCP Registry 合并去重，离线兜底内置清单，5 分钟缓存）、联网搜索
+  （`/search?q=`）、GitHub repo 解析（`/resolve?repo=`，用于一键「添加」）、
+  工具列表 / 连接日志 / 配置模板、MCP 快速了解引导。
+
+路由：`/api/skill-manager/*`（集合管理）、`/api/skill-toggles/*`（开关与预设覆盖）、
+`/api/mcp-recommended{,/search,/resolve}`
 
 > 技能在 webui 里原本是**两个独立 host 模块**（`skill-manager` 与 `skill-toggles`），
 > 缺了后者技能面板的「Agent 预设」筛选条就会全部 404。这里两个都在。
@@ -113,6 +124,7 @@ injectRefreshSteps 8     injectTopK 8            entryLimit 500
 extractMaxChars 6000     minImportance 6         logApiRequests false
 dailyCompileEnabled true consolidateEnabled true consolidateMaxEntries 200
 consolidateTimeoutMs 60000                       embeddingProvider off
+pruneNeverHitDays 21
 ```
 
 ---

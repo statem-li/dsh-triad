@@ -69,15 +69,14 @@ function SkillsEntry(): JSX.Element {
   const rail = useRail()
   return (
     <>
-      {/* 打开的书（Feather book-open 线性风，与自动化/记忆的自绘图标同款描边） */}
+      {/* 能力（闪电，Feather zap 线性风，与自动化/记忆的自绘图标同款描边） */}
       <NavButton
         icon={(
           <svg width={rail ? 18 : 16} height={rail ? 18 : 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+            <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" />
           </svg>
         )}
-        label="技能"
+        label="能力"
         rail={rail}
         expanded={open}
         onClick={e => {

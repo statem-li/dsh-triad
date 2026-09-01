@@ -1,9 +1,18 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+/**
+ * AccountsTab — 余额/配额 tab（Skills Hub 风格）。
+ *
+ * 统计行（供应商/积分池/告警/已配置，宽卡 + 悬浮 desc + 点击展开明细）
+ * + 工具栏（全部刷新）+ 供应商卡片网格（积分制展示积分池卡片组）。
+ */
+
+import { useEffect, useState } from 'react'
 import { usageApi, type ProviderInfo } from './api'
 import { ProviderGroup } from './primitives/ProviderGroup'
 import { CredentialModal } from './primitives/CredentialModal'
 import { ErrorCard } from './primitives/ErrorCard'
 import { ensureAccountsStyles } from './primitives/accounts-sheet'
+import { css, HubStat, HubStatDetail, HubSection, walletIcon, tokensIcon, hitIcon, modelsIcon } from './hub'
+import { modalStaggerClass } from '../../modal-animation'
 
 export interface AccountsTabProps { refreshTick?: number }
 
@@ -19,6 +28,7 @@ export function AccountsTab({ refreshTick }: AccountsTabProps): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [openStat, setOpenStat] = useState<string | null>(null)
 
   useEffect(() => ensureAccountsStyles(), [])
 
@@ -50,49 +60,79 @@ export function AccountsTab({ refreshTick }: AccountsTabProps): JSX.Element {
 
   const alertCount = providers.filter(p => p.status === 'critical' || p.status === 'warning').length
   const poolCount = providers.filter(p => p.adapter === 'sensenova-token-plan').length
+  const configuredCount = providers.filter(p => p.configured).length
 
   if (error) {
     return <ErrorCard message={error} onRetry={load} />
   }
 
-  const headStyle: CSSProperties = {
-    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
-  }
-  const titleStyle: CSSProperties = {
-    fontSize: 15, fontWeight: 600, color: 'var(--dsw-alias-label-primary)',
-  }
-  const chipStyle = (color: string, bg: string): CSSProperties => ({
-    fontSize: 11, lineHeight: '20px', borderRadius: 6, padding: '0 8px', color, background: bg, flex: 'none',
-  })
-  const refreshStyle: CSSProperties = {
-    marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
-    padding: '4px 12px', fontSize: 12, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8,
-    background: 'transparent', color: 'var(--dsw-alias-label-primary)', cursor: refreshing ? 'default' : 'pointer',
-    transition: 'border-color .18s cubic-bezier(.2,.8,.2,1), color .18s cubic-bezier(.2,.8,.2,1)',
-  }
+  const toggleStat = (key: string): void => { setOpenStat(v => v === key ? null : key) }
 
   return (
-    <div>
-      <div style={headStyle}>
-        <span style={titleStyle}>余额/配额</span>
-        {loaded && providers.length > 0 && (
-          <>
-            <span style={chipStyle('var(--dsw-alias-label-secondary)', 'var(--dsw-alias-interactive-bg-hover)')}>
-              {providers.length} 个供应商
-            </span>
-            {poolCount > 0 && (
-              <span style={chipStyle('var(--dsw-alias-state-business-primary)', 'color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)')}>
-                {poolCount} 个积分制
-              </span>
-            )}
-            {alertCount > 0 && (
-              <span style={chipStyle('var(--dsw-alias-state-warn-primary)', 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent)')}>
-                {alertCount} 个告警
-              </span>
-            )}
-          </>
-        )}
-        <button type="button" onClick={refreshAll} disabled={refreshing || providers.length === 0} style={refreshStyle}>
+    <>
+      {/* ── 统计行 ── */}
+      <div className={css.statsRow}>
+        <HubStat
+          tone="blue"
+          icon={walletIcon(18)}
+          label="供应商"
+          value={loaded ? String(providers.length) : '—'}
+          desc={loaded ? `${providers.length} 个已接入的账户/订阅` : '加载中…'}
+          open={openStat === 'total'}
+          onToggle={() => { toggleStat('total') }}
+          delay={0}
+        />
+        <HubStat
+          tone="violet"
+          icon={tokensIcon(18)}
+          label="积分池"
+          value={loaded ? String(poolCount) : '—'}
+          desc="SenseNova 积分制账户池"
+          open={openStat === 'pool'}
+          onToggle={() => { toggleStat('pool') }}
+          delay={40}
+        />
+        <HubStat
+          tone="orange"
+          icon={hitIcon(18)}
+          label="告警"
+          value={loaded ? String(alertCount) : '—'}
+          valueWarn={alertCount > 0}
+          desc={alertCount > 0 ? `${alertCount} 个账户处于警告/紧急状态` : '全部账户状态正常'}
+          open={openStat === 'alert'}
+          onToggle={() => { toggleStat('alert') }}
+          delay={80}
+        />
+        <HubStat
+          tone="green"
+          icon={modelsIcon(18)}
+          label="已配置"
+          value={loaded ? String(configuredCount) : '—'}
+          desc={`${configuredCount} 个账户已配置凭据/订阅`}
+          open={openStat === 'configured'}
+          onToggle={() => { toggleStat('configured') }}
+          delay={120}
+        />
+      </div>
+
+      {openStat !== null && (
+        <HubStatDetail
+          title={`${openStat === 'total' ? '供应商' : openStat === 'pool' ? '积分池' : openStat === 'alert' ? '告警' : '已配置'} · 余额/配额`}
+          rows={openStat === 'total'
+            ? (loaded ? providers.map(p => ({ label: p.displayName, value: p.status })) : [{ label: '…', value: '加载中' }])
+            : [
+              { label: '积分制', value: String(poolCount) },
+              { label: '订阅制', value: String(providers.filter(p => p.accountMode === 'subscription').length) },
+              { label: '余额制', value: String(providers.filter(p => p.accountMode === 'balance').length) },
+            ]}
+        />
+      )}
+
+      {/* ── 工具栏：全部刷新 ── */}
+      <div className={css.toolbar}>
+        <span className={css.toolbarMeta}>余额与配额快照，可单卡或全部刷新</span>
+        <span className={css.toolbarSpacer} />
+        <button type="button" className={css.toolButton} onClick={refreshAll} disabled={refreshing || providers.length === 0}>
           <svg className={refreshing ? 'dsh-acc-spin' : undefined} width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.8v3.2h-3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -100,33 +140,39 @@ export function AccountsTab({ refreshTick }: AccountsTabProps): JSX.Element {
         </button>
       </div>
 
-      {!loaded ? (
-        <div className="dsh-acc-grid">
-          {[0, 1, 2, 3].map(i => <div key={i} className="dsh-acc-skel" />)}
-        </div>
-      ) : providers.length === 0 ? (
-        <div style={{ border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 14, background: 'var(--dsw-alias-bg-layer-2)', padding: '44px 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--dsw-alias-label-primary)', marginBottom: 6 }}>暂无可展示的余额/订阅数据</div>
-          <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 20 }}>配置供应商凭据或产生用量后，这里会出现对应的余额与配额卡片。</div>
-        </div>
-      ) : (
-        <div className="dsh-acc-grid">
-          {providers.map((p, i) => (
-            <ProviderGroup
-              key={p.id}
-              provider={p}
-              onRequireCredential={setCredentialFor}
-              refreshKey={refreshKey}
-              index={i}
-            />
-          ))}
-        </div>
-      )}
+      <div className={`${css.mainScroll} ${modalStaggerClass}`}>
+        <HubSection title="供应商余额与配额" meta={loaded ? `最后更新 ${(() => {
+          const ts = Math.max(...providers.map(p => p.fetchedAt ?? 0), 0)
+          return ts > 0 ? new Date(ts).toLocaleTimeString() : '—'
+        })()}` : undefined}>
+          {!loaded ? (
+            <div className="dsh-acc-grid">
+              {[0, 1, 2, 3].map(i => <div key={i} className="dsh-acc-skel" />)}
+            </div>
+          ) : providers.length === 0 ? (
+            <div className={css.empty}>
+              暂无可展示的余额/订阅数据。配置供应商凭据或产生用量后，这里会出现对应的余额与配额卡片。
+            </div>
+          ) : (
+            <div className="dsh-acc-grid">
+              {providers.map((p, i) => (
+                <ProviderGroup
+                  key={p.id}
+                  provider={p}
+                  onRequireCredential={setCredentialFor}
+                  refreshKey={refreshKey}
+                  index={i}
+                />
+              ))}
+            </div>
+          )}
+        </HubSection>
+      </div>
 
       {credentialFor !== null && (
         <CredentialModal providerName={providers.find(p => p.id === credentialFor)?.displayName ?? credentialFor}
           onClose={() => setCredentialFor(null)} onSave={saveCredential} />
       )}
-    </div>
+    </>
   )
 }

@@ -1,22 +1,9 @@
 /**
- * TrendTab — 趋势 tab（用量总览仪表盘）。
+ * TrendTab — 趋势 tab（Skills Hub 风格）。
  *
- * 布局：铺满右侧面板的 bento 网格（参考现代 dashboard 语言，但配色/控件规格
- * 仍严格对齐 DSH 官方 token）：
- *  - hero 面：标题 + 日期 + 一排 mono 大数（Tokens/输入/输出/调用次数）+ 右侧
- *    缓存命中率半环仪表；
- *  - 主区：用量趋势（粒度自适应柱图，纵向 flex:1 吃掉剩余高度）+ 右列供应商
- *    占比立柱 / 告警列表；
- *  - 底排：小指标块（日均/工作时长/模型数/异常日/告警）带跳转箭头；
- *  - 末排：模型消耗排行。
- *
- * 视觉令牌：面 = bg-module-platform + border-l1 + r16（dash.tsx 的 surface）；
- * 强调一律 state-business-primary，禁止反色的 brand-primary。
- * 同时向 SignalTab 导出旧的设置页行卡片令牌（rowCard/editorFace/Stat/CardHead）。
- *
- * 查询范围由 Workbench 全局持有（RangePicker 在 tabNav 行），本 tab 只消费区间：
- * 粒度自适应（≤2 天按小时、≤31 天按日、≤120 天按周、更长按月）；
- * 单日/无趋势时主图位改排模型榜。
+ * 骨架与技能面板一致：顶部统计行（宽卡，desc 悬浮、点击展开明细）+ 工具栏
+ * （范围/粒度 meta + 跳转按钮）+ 内容滚动区（bento 卡：趋势图 / 供应商占比 /
+ * 告警 / 命中率半环 / 小指标块 / 模型排行）。查询范围由左栏 RangePicker 持有。
  */
 
 import { useEffect, useState } from 'react'
@@ -32,25 +19,25 @@ import { BarChart } from './charts/BarChart'
 import { RankBars } from './charts/RankBars'
 import { Gauge } from './charts/Gauge'
 import { ShareColumns } from './charts/ShareColumns'
-import { HeroStat, PanelHead, Tile, icons, panel, surface } from './dash'
+import { Tile, icons, panel } from './dash'
 import { ErrorCard } from './primitives/ErrorCard'
 import { EmptyState } from './primitives/EmptyState'
 import { useIsMobile } from '../../responsive'
+import { modalStaggerClass } from '../../modal-animation'
+import { css, HubStat, HubStatDetail, HubSection } from './hub'
 
 export interface TrendTabProps {
   range: DateRange
   rangeLabel: string
   onJumpAccounts: () => void
-  /** 跳转信号 tab（异常日柱点击联动）。 */
   onJumpSignal?: () => void
+  onJumpDetail?: () => void
   refreshTick?: number
 }
 
-/* ── DSH 设置页设计令牌（对齐 ModelsSection.module.css；SignalTab 复用） ──── */
-
 export const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace'
 
-/** `.rowCard`：描边行卡片。 */
+/** `.rowCard`：描边行卡片（SignalTab 复用）。 */
 export const rowCard: React.CSSProperties = {
   border: '1px solid var(--dsw-alias-border-l2)',
   borderRadius: 12,
@@ -117,11 +104,9 @@ export function Stat({ label, value, exact, sub, delta, first }: {
   )
 }
 
-/** 范围内模型聚合排行（含命中率，见 aggregate.modelRank）。 */
-
 const GRAIN_NAME = { hour: '按小时', day: '按日', week: '按周', month: '按月' } as const
 
-/** 面板级窄断点：主区两列改单列（fill 下卡片宽≈视口宽，用视口断点即可）。 */
+/** 面板级窄断点：主区两列改单列（fill 下卡片宽≈视口宽）。 */
 function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 1150px)').matches)
   useEffect(() => {
@@ -142,13 +127,13 @@ function deltaBadge(delta: number | null): { text: string; color: string } | nul
   return { text: '持平', color: 'var(--dsw-alias-label-tertiary)' }
 }
 
-/** 今天的中文日期串（hero 副标题）。 */
+/** 今天的中文日期串。 */
 function todayText(now = new Date()): string {
   const week = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()]
   return `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 · 星期${week}`
 }
 
-export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, refreshTick }: TrendTabProps): JSX.Element {
+export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJumpDetail, refreshTick }: TrendTabProps): JSX.Element {
   const [usage, setUsage] = useState<UsageDay[] | null>(null)
   const [hours, setHours] = useState<UsageHour[]>([])
   const [providers, setProviders] = useState<ProviderInfo[]>([])
@@ -157,6 +142,9 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, refr
   const isMobile = useIsMobile()
   const narrow = useNarrow()
   const compact = isMobile || narrow
+
+  /** 点统计卡展开的明细（哪个卡开着；null = 全收）。 */
+  const [openStat, setOpenStat] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -189,15 +177,11 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, refr
   const avg = dailyAverage(filtered)
   const activity = sumActivity(filtered)
 
-  // 粒度自适应趋势：≤2 天按小时、≤31 天按日、≤120 天按周、更长按月。
   const grain = pickGrain(range)
   const series = grain === 'hour' ? aggregateHourSeries(hours, range) : aggregateSeries(filtered, grain)
-  // 单点也画（如刚跨天时当天只有 1 个小时点）：一根柱同样是有效趋势；
-  // 确实无可绘数据时主图位给空态，不再偷换成模型排行（底部已有常驻排行卡）。
   const showTrend = series.length >= 1
   const rank = modelRank(filtered)
 
-  // 异常日（仅日粒度）：范围内 tokens > 活跃日中位数 ×3 的天，柱顶红点 + 点击跳信号 tab。
   const anomalyMap = (() => {
     if (grain !== 'day' || filtered.length === 0) return null
     const actives = filtered.map(d => d.tokens ?? 0).filter(v => v > 0).sort((a, b) => a - b)
@@ -222,142 +206,210 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, refr
 
   const emptyHint = (title: string): JSX.Element => <EmptyState title={title} hint="去聊两句就会在这里出现数据" />
   const yi = formatYiExact(sum.total)
+  const deltaTotal = deltaPercent(sum.total, prevSum.total)
+  const deltaInput = deltaPercent(sum.input, prevSum.input)
+  const deltaOutput = deltaPercent(sum.output, prevSum.output)
+
+  /** 统计卡切换：开着的点一下收起。 */
+  const toggleStat = (key: string): void => { setOpenStat(v => v === key ? null : key) }
+
+  const statDetailRows = {
+    total: [
+      { label: '输入', value: formatUnits(sum.input) },
+      { label: '输出', value: formatUnits(sum.output) },
+      { label: '缓存', value: formatUnits(sum.cache) },
+      { label: '精确合计', value: yi?.exact ?? formatExact(sum.total) },
+    ],
+    input: [
+      { label: '输入 Token', value: formatUnits(sum.input) },
+      { label: '日平均', value: formatUnits(avg) },
+      { label: '带宽', value: `↑${deltaInput === null ? '—' : `${deltaInput >= 10 ? Math.round(deltaInput) : deltaInput.toFixed(1)}%`}` },
+    ],
+    output: [
+      { label: '输出 Token', value: formatUnits(sum.output) },
+      { label: '占比', value: `${sum.total > 0 ? Math.round((sum.output / sum.total) * 100) : 0}%` },
+      { label: '带宽', value: `↑${deltaOutput === null ? '—' : `${deltaOutput >= 10 ? Math.round(deltaOutput) : deltaOutput.toFixed(1)}%`}` },
+    ],
+    requests: [
+      { label: '调用次数', value: formatUnits(activity.requests) },
+      { label: '工作时长', value: formatWorkDuration(activity.workMs) },
+      { label: '日均 Tokens', value: formatUnits(avg) },
+    ],
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: '100%', minWidth: 0, flexShrink: 0 }}>
-      {/* ── hero：标题 + 大数排 + 缓存命中率半环 ── */}
-      <div style={{
-        ...surface,
-        flex: 'none',
-        padding: compact ? 16 : '20px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 20,
-        flexWrap: 'wrap',
-        // 品牌蓝极淡渐晕：色值由 token 派生，浅/深主题都安全。
-        backgroundImage: 'radial-gradient(120% 160% at 100% 0%, color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent) 0%, transparent 62%)',
-      }}>
-        <div style={{ flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }}>
-              {rangeLabel}用量总览
-            </span>
-            <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>{todayText()}</span>
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: compact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
-            gap: 12,
-          }}>
-            <HeroStat icon={icons.tokens} value={yi?.yi ?? formatUnits(sum.total)} label="总 Tokens" delta={deltaBadge(deltaPercent(sum.total, prevSum.total))} />
-            <HeroStat icon={icons.input} value={formatUnits(sum.input)} label="输入" delta={deltaBadge(deltaPercent(sum.input, prevSum.input))} />
-            <HeroStat icon={icons.output} value={formatUnits(sum.output)} label="输出" delta={deltaBadge(deltaPercent(sum.output, prevSum.output))} />
-            <HeroStat icon={icons.requests} value={formatUnits(activity.requests)} label="调用次数" />
-          </div>
-          <span style={{ fontSize: 11, lineHeight: '16px', fontFamily: MONO, color: 'var(--dsw-alias-label-tertiary)' }}>
-            精确合计 {yi?.exact ?? formatExact(sum.total)}
-          </span>
-        </div>
-        <Gauge percent={filtered.length > 0 ? hitRate : null} label="缓存命中率" size={compact ? 170 : 200} />
-      </div>
-
-      {/* ── 主区：趋势主图（吃掉剩余高度）+ 右列占比/告警 ── */}
-      <div style={{
-        flex: '1 1 auto',
-        minHeight: 0,
-        display: 'grid',
-        gridTemplateColumns: compact ? '1fr' : 'minmax(0, 2.2fr) minmax(260px, 1fr)',
-        gap: 10,
-        alignItems: 'stretch',
-      }}>
-        <div style={{ ...panel(16, 12), minHeight: 260 }}>
-          <PanelHead
-            title={showTrend ? '用量趋势' : '模型消耗排行'}
-            meta={showTrend ? `${rangeLabel} · ${GRAIN_NAME[grain]}${anomalyMap !== null ? ` · ${anomalyMap.size} 个异常日` : ''}` : rangeLabel}
-          />
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            {showTrend
-              ? <BarChart data={series} anomalies={anomalyMap ?? undefined} onSelectAnomaly={anomalyMap !== null && onJumpSignal !== undefined ? () => onJumpSignal() : undefined} />
-              : emptyHint(`${rangeLabel}暂无可绘制的趋势数据`) }
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
-          <div style={{ ...panel(16, 12), flex: 'none' }}>
-            <PanelHead title="供应商占比" meta={`Top ${Math.min(3, share.length)}`} />
-            <ShareColumns rows={share.map(s => ({ label: s.provider, value: s.tokens }))} total={sum.total} height={compact ? 150 : 176} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {share.slice(0, 4).map((s, i) => (
-                <div key={s.provider} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, lineHeight: '18px', minWidth: 0 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, flex: 'none', background: palette[i % palette.length] }} />
-                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-primary)' }} title={s.provider}>{s.provider}</span>
-                  <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: MONO, color: 'var(--dsw-alias-label-secondary)' }}>{formatUnits(s.tokens)}</span>
-                </div>
-              ))}
-              {share.length === 0 && (
-                <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>{rangeLabel}暂无用量</span>
-              )}
-            </div>
-          </div>
-
-          <div style={{ ...panel(16, 10), flex: '1 1 auto', minHeight: 0 }}>
-            <PanelHead title="供应商告警" meta={alerts.length > 0 ? `${alerts.length} 条` : '全部正常'} />
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-              {alerts.length === 0 ? (
-                <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>全部供应商状态正常。</div>
-              ) : alerts.map((p, i) => (
-                <div key={p.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
-                  borderTop: i === 0 ? undefined : '1px solid var(--dsw-alias-border-l1)',
-                }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, flex: 'none', background: p.alert!.level === 'critical' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-state-warn-primary)' }} />
-                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, lineHeight: '20px', color: 'var(--dsw-alias-label-primary)' }}>{p.displayName}</span>
-                  <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 12, lineHeight: '18px', fontFamily: MONO, color: 'var(--dsw-alias-label-secondary)' }}>
-                    {p.alert!.metric === 'remaining-percent' ? `剩余 ${p.alert!.value ?? 0}%` : `${p.alert!.value ?? ''}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <button type="button" onClick={onJumpAccounts} style={{
-              flex: 'none', alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 4,
-              padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
-              fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)',
-            }}>
-              查看余额/配额
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M7 17 17 7M9 7h8v8" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 底排小指标块 ── */}
-      <div style={{
-        flex: 'none',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-        gap: 10,
-      }}>
-        <Tile label="日均 Tokens" value={formatUnits(avg)} sub={`${filtered.length} 天有数据`} />
-        <Tile label="工作时长" value={formatWorkDuration(activity.workMs)} sub={filtered.length > 0 ? `日均 ${formatWorkDuration(activity.workMs / filtered.length)}` : undefined} />
-        <Tile label="缓存量" value={formatUnits(sum.cache)} sub={`命中率 ${formatHitRate(hitRate)}`} tone="muted" />
-        <Tile label="活跃模型" value={String(rank.length)} sub={rank[0] !== undefined ? `Top ${rank[0].label}` : undefined} tone="success" />
-        <Tile
-          label="异常日"
-          value={String(anomalyMap?.size ?? 0)}
-          sub={anomalyMap !== null ? '高于活跃日中位数 3 倍' : '无异常'}
-          tone={anomalyMap !== null ? 'error' : 'muted'}
-          action={onJumpSignal !== undefined ? '查看信号' : undefined}
-          onAction={onJumpSignal}
+    <>
+      {/* ── 统计行：宽卡，hover 悬浮 desc、点击展开明细 ── */}
+      <div className={css.statsRow}>
+        <HubStat
+          tone="blue"
+          icon={icons.tokens}
+          label="总 Tokens"
+          value={yi?.yi ?? formatUnits(sum.total)}
+          desc={deltaTotal === null ? `范围合计 ${formatUnits(sum.total)}` : `环比上一周期 ${deltaTotal >= 0 ? '+' : ''}${Math.round(deltaTotal)}%`}
+          open={openStat === 'total'}
+          onToggle={() => { toggleStat('total') }}
+          delay={0}
+        />
+        <HubStat
+          tone="violet"
+          icon={icons.input}
+          label="输入"
+          value={formatUnits(sum.input)}
+          desc={`输入精确 ${formatExact(sum.input)}；环比${deltaInput === null ? '—' : ` ${deltaInput >= 10 ? Math.round(deltaInput) : deltaInput.toFixed(1)}%`}`}
+          open={openStat === 'input'}
+          onToggle={() => { toggleStat('input') }}
+          delay={40}
+        />
+        <HubStat
+          tone="orange"
+          icon={icons.output}
+          label="输出"
+          value={formatUnits(sum.output)}
+          desc={`输出精确 ${formatExact(sum.output)}；环比${deltaOutput === null ? '—' : ` ${deltaOutput >= 10 ? Math.round(deltaOutput) : deltaOutput.toFixed(1)}%`}`}
+          open={openStat === 'output'}
+          onToggle={() => { toggleStat('output') }}
+          delay={80}
+        />
+        <HubStat
+          tone="green"
+          icon={icons.requests}
+          label="调用次数"
+          value={formatUnits(activity.requests)}
+          desc={`累计工作时长 ${formatWorkDuration(activity.workMs)}；活跃 ${filtered.length} 天`}
+          open={openStat === 'requests'}
+          onToggle={() => { toggleStat('requests') }}
+          delay={120}
         />
       </div>
 
-      {/* ── 模型消耗排行 ── */}
-      <div style={{ ...panel(16, 12), flex: 'none' }}>
-        <PanelHead title="模型消耗排行" meta={`${rangeLabel} · Top ${Math.min(10, rank.length)}`} />
-        {rank.length === 0 ? emptyHint(`${rangeLabel}暂无用量`) : <RankBars rows={rank} nameWidth={compact ? 140 : 220} />}
+      {/* 点统计卡展开的明细块 */}
+      {openStat !== null && openStat in statDetailRows ? (
+        <HubStatDetail
+          title={`${openStat === 'total' ? '总 Tokens' : openStat === 'input' ? '输入' : openStat === 'output' ? '输出' : '调用次数'} · ${rangeLabel} 明细`}
+          rows={statDetailRows[openStat as keyof typeof statDetailRows]}
+        />
+      ) : null}
+
+      {/* ── 工具栏：范围·粒度 meta + 跳转 ── */}
+      <div className={css.toolbar}>
+        <span className={css.toolbarMeta}>
+          {rangeLabel} · {GRAIN_NAME[grain]}{anomalyMap !== null ? ` · ${anomalyMap.size} 个异常日` : ''}
+        </span>
+        <span className={css.toolbarSpacer} />
+        <button type="button" className={css.toolButton} onClick={onJumpDetail}>{'查看明细'}</button>
+        {onJumpSignal !== undefined && (
+          <button type="button" className={css.toolButton} onClick={onJumpSignal}>查看信号</button>
+        )}
+        <button type="button" className={css.toolButton} onClick={onJumpAccounts}>余额/配额</button>
+        <span className={css.toolbarMeta}>{todayText()}</span>
       </div>
-    </div>
+
+      <div className={`${css.mainScroll} ${modalStaggerClass}`}>
+        {/* ── 主区：趋势图 + 右列（命中率 / 占比 / 告警） ── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: compact ? '1fr' : 'minmax(0, 2.2fr) minmax(260px, 1fr)',
+          gap: 12,
+          alignItems: 'stretch',
+          minWidth: 0,
+        }}>
+          <HubSection title={showTrend ? '用量趋势' : '模型消耗排行'} meta={showTrend ? `${rangeLabel} · ${GRAIN_NAME[grain]}` : rangeLabel}>
+            <div style={{ ...panel(16, 12), minHeight: 280 }}>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {showTrend
+                  ? <BarChart data={series} anomalies={anomalyMap ?? undefined} onSelectAnomaly={anomalyMap !== null && onJumpSignal !== undefined ? () => onJumpSignal() : undefined} />
+                  : emptyHint(`${rangeLabel}暂无可绘制的趋势数据`)}
+              </div>
+            </div>
+          </HubSection>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+            <HubSection title="缓存命中率" meta={filtered.length > 0 ? `${filtered.length} 天平均` : undefined}>
+              <div style={{ ...panel(16, 12), alignItems: 'center' }}>
+                <Gauge percent={filtered.length > 0 ? hitRate : null} label="缓存命中率" size={compact ? 150 : 170} />
+              </div>
+            </HubSection>
+
+            <HubSection title="供应商占比" meta={`Top ${Math.min(3, share.length)}`}>
+              <div style={{ ...panel(16, 12) }}>
+                <ShareColumns rows={share.map(s => ({ label: s.provider, value: s.tokens }))} total={sum.total} height={compact ? 150 : 176} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {share.slice(0, 4).map((s, i) => (
+                    <div key={s.provider} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, lineHeight: '18px', minWidth: 0 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, flex: 'none', background: palette[i % palette.length] }} />
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-primary)' }} title={s.provider}>{s.provider}</span>
+                      <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: MONO, color: 'var(--dsw-alias-label-secondary)' }}>{formatUnits(s.tokens)}</span>
+                    </div>
+                  ))}
+                  {share.length === 0 && (
+                    <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>{rangeLabel}暂无用量</span>
+                  )}
+                </div>
+              </div>
+            </HubSection>
+
+            <HubSection title="供应商告警" meta={alerts.length > 0 ? `${alerts.length} 条` : '全部正常'}>
+              <div style={{ ...panel(16, 10), flex: '1 1 auto', minHeight: 0 }}>
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                  {alerts.length === 0 ? (
+                    <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>全部供应商状态正常。</div>
+                  ) : alerts.map((p, i) => (
+                    <div key={p.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
+                      borderTop: i === 0 ? undefined : '1px solid var(--dsw-alias-border-l1)',
+                    }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 4, flex: 'none', background: p.alert!.level === 'critical' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-state-warn-primary)' }} />
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, lineHeight: '20px', color: 'var(--dsw-alias-label-primary)' }}>{p.displayName}</span>
+                      <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 12, lineHeight: '18px', fontFamily: MONO, color: 'var(--dsw-alias-label-secondary)' }}>
+                        {p.alert!.metric === 'remaining-percent' ? `剩余 ${p.alert!.value ?? 0}%` : `${p.alert!.value ?? ''}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={onJumpAccounts} style={{
+                  flex: 'none', alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 4,
+                  padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)',
+                }}>
+                  查看余额/配额
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M7 17 17 7M9 7h8v8" />
+                  </svg>
+                </button>
+              </div>
+            </HubSection>
+          </div>
+        </div>
+
+        {/* ── 底排小指标块 ── */}
+        <div style={{
+          flex: 'none',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 12,
+        }}>
+          <Tile label="日均 Tokens" value={formatUnits(avg)} sub={`${filtered.length} 天有数据`} />
+          <Tile label="工作时长" value={formatWorkDuration(activity.workMs)} sub={filtered.length > 0 ? `日均 ${formatWorkDuration(activity.workMs / filtered.length)}` : undefined} />
+          <Tile label="缓存量" value={formatUnits(sum.cache)} sub={`命中率 ${formatHitRate(hitRate)}`} tone="muted" />
+          <Tile label="活跃模型" value={String(rank.length)} sub={rank[0] !== undefined ? `Top ${rank[0].label}` : undefined} tone="success" />
+          <Tile
+            label="异常日"
+            value={String(anomalyMap?.size ?? 0)}
+            sub={anomalyMap !== null ? '高于活跃日中位数 3 倍' : '无异常'}
+            tone={anomalyMap !== null ? 'error' : 'muted'}
+            action={onJumpSignal !== undefined ? '查看信号' : undefined}
+            onAction={onJumpSignal}
+          />
+        </div>
+
+        {/* ── 模型消耗排行 ── */}
+        <HubSection title="模型消耗排行" meta={`${rangeLabel} · Top ${Math.min(10, rank.length)}`}>
+          <div style={{ ...panel(16, 12) }}>
+            {rank.length === 0 ? emptyHint(`${rangeLabel}暂无用量`) : <RankBars rows={rank} nameWidth={compact ? 140 : 220} />}
+          </div>
+        </HubSection>
+      </div>
+    </>
   )
 }

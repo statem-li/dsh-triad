@@ -1,31 +1,29 @@
 /**
- * dsh-memory 主面板 —— 主从布局（master-detail）：
- *  ┌──────────┬────────────────────────────┐
- *  │ 条目列表  │  详情：标题 / meta / 完整 MD │
- *  │ (紧凑行)  │  （查看 · 编辑 · 移动 · 新建）│
- *  └──────────┴────────────────────────────┘
- * 左列只放「标题 + 摘要 + 时间 + 重要度迷你条」，空间留给右侧详情做完整 Markdown
- * 渲染；置顶条目排列表最前（📌 标识），时间分组作为列表内小节标题。
+ * dsh-memory 主面板 —— 三栏应用布局（按参考设计图复刻，浅色系）：
  *
- * 卡片为 PopoverShell solid 模式（不透明实底，玻璃质感豁免）；顶部两层：
- * head（下划线 Tab + 统计）→ toolbar（搜索 / 作用域下拉 / 标签 / 动作），
- * 筛选到具体项目时插入上下文条（项目名 + 别名 / 自动记忆开关 / 清空）。
+ *   ┌────────┬─────────────────────────────────────────────┐
+ *   │ 左栏    │ 顶栏：搜索框（⌘K）· 统计 · 关闭                 │
+ *   │ 导航    ├─────────────────────────────────────────────┤
+ *   │ 项目    │ （筛选行移除：作用域/分类由左栏导航控制）        │
+ *   │ 分类    ├──────────────┬──────────────────────────────┤
+ *   │ 设置    │ 中栏列表      │ 右栏详情（关联/历史/相关）         │
+ *   └────────┴──────────────┴──────────────────────────────┘
  *
- * 四个 Tab：
- *  - 全部：主从布局 + 搜索 / 作用域 / 标签筛选 + 添加 / 多选删除 / 一键整理；
- *  - 变更：作用域 + 今天/全部 段控，全宽列表（动作徽标 + 摘要 + 前后对比）；
- *  - 修订：整理前快照，可一键回滚；
- *  - 设置：引擎运行时配置（分组行卡片，见 SettingsTab）。
+ *  - 左栏：全部记忆 / 变更 / 修订 / 回收站 导航 + 项目区 + 分类区 + 底部设置；
+ *  - 顶栏：全局搜索（260ms 防抖，⌘K 聚焦）+ 统计（条数·项目·置顶·变更）+ 关闭；
+ *  - 中栏列表头：计数 + 排序切换 / 整理 / 多选 / 刷新（多选时换成批量操作），
+ *    选中具体项目时项目上下文条（别名 / 自动记忆 / 清空）出现在列表头下方；
+ *  - 中栏：置顶大卡（星标 + 摘要 + 时间行）+ 时间分组紧凑行，选中蓝描边；
+ *  - 右栏：标题 + 标鉴 chips + 重要度卡 + 正文 + 关联信息 + 历史记录 + 相关记忆。
  *
  * 数据加载分片：list/tags 随筛选条件走；changes / revisions / config / summary
- * 各自独立加载，切 Tab 时按需拉取——避免每次改一个字符就把五个接口全打一遍。
- * 搜索框输入走 260ms 防抖。
+ * 各自独立加载，切视图时按需拉取。相关记忆（/related）随选中条目懒加载。
+ * 既有能力（编辑 / 移动 / 多选删除 / 整理 / 回滚 / 设置）全部保留。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
-  IconCloseFill14,
   IconEditOutline16,
   IconFolderOpenOutline16,
   IconPlusOutline16,
@@ -53,10 +51,10 @@ import { SettingsTab } from './SettingsTab.js'
 import { makeT, type MemoryLocaleKey, type MemoryT } from './locales.js'
 import { modalStaggerClass } from '../modal-animation.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
-import { PshBody, PshHead, PopoverShell, type PopoverAnchor } from '../popover-shell.js'
+import { PshBody, PopoverShell, type PopoverAnchor } from '../popover-shell.js'
 
-/** 面板 Tab。 */
-export type MemoryTab = 'all' | 'changes' | 'revisions' | 'settings'
+/** 面板视图（左栏导航决定）。 */
+export type MemoryTab = 'all' | 'changes' | 'revisions' | 'trash' | 'settings'
 
 /** 时间分组。 */
 type GroupKey = 'today' | 'week' | 'earlier' | 'longterm'
@@ -72,6 +70,9 @@ type ScopeFilter = 'all' | 'global' | `project:${string}`
 
 /** 变更 Tab 的时间范围。 */
 type ChangeRange = 'today' | 'all'
+
+/** 列表排序方向（最近 / 最旧）。 */
+type SortDir = 'new' | 'old'
 
 /** 编辑中的条目（含归属范围与元数据，保存时一并提交）。 */
 interface EditState {
@@ -90,6 +91,13 @@ interface MoveState {
   entryId: string
   target: 'global' | 'project'
   project: string
+}
+
+/** 相关记忆状态（随选中条目懒加载）。 */
+interface RelatedState {
+  entryId: string | null
+  entries: MemoryEntryView[]
+  loading: boolean
 }
 
 /** 面板 props。 */
@@ -120,6 +128,31 @@ const KIND_LABEL: Record<MemoryKind, MemoryLocaleKey> = {
   decision: 'kindDecision',
   gotcha: 'kindGotcha',
   'session-summary': 'kindSession',
+}
+
+/** 分类圆点色板（按标签名哈希稳定取色；参考图：蓝/琥珀/玫红/紫/青…）。 */
+const DOT_COLORS = ['#5B8DEF', '#F5C242', '#F0366C', '#7C5CFC', '#2BA9E0', '#2AA57A', '#F59E0B', '#8B5CF6', '#22B8CF', '#F97316'] as const
+
+/** 项目图标色板（按项目 hash 哈希稳定取色）。 */
+const PROJ_COLORS = ['#2AA57A', '#F59E0B', '#5B8DEF', '#F0366C', '#7C5CFC', '#22B8CF'] as const
+
+/** 条目图标颜色（按 kind 着色：身份紫 / 偏好蓝 / 事实灰 / 决策琥珀 / 踩坑玫红 / 会话青）。 */
+const KIND_COLORS: Record<MemoryKind, string> = {
+  identity: '#7C5CFC',
+  preference: '#5B8DEF',
+  fact: '#9CA3AF',
+  decision: '#F5C242',
+  gotcha: '#F0366C',
+  'session-summary': '#2BA9E0',
+}
+
+/** 字符串哈希（稳定取色）。 */
+function hashOf(text: string): number {
+  let hash = 0
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
 }
 
 /** 分割标签输入（逗号/空格/中文逗号）。 */
@@ -251,7 +284,106 @@ export function PinIcon({ size = 16, filled = false }: { size?: number; filled?:
   )
 }
 
-// ── 详情区 meta 徽章图标族（11px 线性，Lucide 形，stroke 继承 currentColor）──
+/** 分类/记忆容器方块（左栏品牌与「全部」项）。 */
+function BoxIcon({ size = 15 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3" />
+      <path d="M6.2 8h3.6" />
+    </svg>
+  )
+}
+
+/** 变更（时钟）。 */
+function ClockIcon({ size = 15 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.8" />
+      <path d="M8 4.8V8l2.2 1.4" />
+    </svg>
+  )
+}
+
+/** 修订（时钟回卷）。 */
+function HistoryIcon({ size = 15 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.8 8a5.2 5.2 0 1 1 1.5 3.7" />
+      <path d="M2.6 5.2v2.6h2.6" />
+      <path d="M8 5.4V8l2 1.2" />
+    </svg>
+  )
+}
+
+/** 回收站。 */
+function TrashIcon({ size = 15 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.8 4.4h10.4" />
+      <path d="M5.6 4.4V3a1 1 0 0 1 1-1h2.8a1 1 0 0 1 1 1v1.4" />
+      <path d="M4.2 4.4l.6 8.2a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9l.6-8.2" />
+      <path d="M6.6 7.2v3.6M9.4 7.2v3.6" />
+    </svg>
+  )
+}
+
+/** 重要度（盾牌）。 */
+function ShieldIcon({ size = 14 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 1.8 13 3.4v4.1c0 3-2 5.5-5 6.7-3-1.2-5-3.7-5-6.7V3.4L8 1.8Z" />
+    </svg>
+  )
+}
+
+/** 复制（两张卡片）。 */
+function CopyIcon({ size = 14 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="5" y="5" width="8.4" height="8.4" rx="1.6" />
+      <path d="M11 3.8A1.6 1.6 0 0 0 9.4 2.2H3.8A1.6 1.6 0 0 0 2.2 3.8v5.6A1.6 1.6 0 0 0 3.8 11" />
+    </svg>
+  )
+}
+
+/** 软废弃（圆环 + 斜杠）。 */
+function RingOffIcon({ size = 14 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.4" />
+      <path d="M4.1 4.1l7.8 7.8" />
+    </svg>
+  )
+}
+
+/** 灯泡（顶栏统计「今日变更」）。 */
+function LightbulbIcon({ size = 13 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 1.8a4 4 0 0 1 2.3 7.25c-.65.5-.9 1.05-.9 1.75h-2.8c0-.7-.25-1.25-.9-1.75A4 4 0 0 1 8 1.8Z" />
+      <path d="M6.9 13.4h2.2M7.3 12.3h1.4" />
+    </svg>
+  )
+}
+
+/** 设置（齿轮）。 */
+function GearIcon({ size = 15 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="8" cy="8" r="2.1" />
+      <path d="M8 1.8v1.9M8 12.3v1.9M1.8 8h1.9M12.3 8h1.9M3.6 3.6l1.35 1.35M11.05 11.05l1.35 1.35M12.4 3.6l-1.35 1.35M4.95 11.05 3.6 12.4" />
+    </svg>
+  )
+}
+
+/** 排序箭头（↑↓）。 */
+function SortArrowsIcon({ size = 13 }: { size?: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 12.5V3.5M8 3.5 5.4 6.1M8 3.5l2.6 2.6" />
+    </svg>
+  )
+}
 
 /** 全局作用域（地球）。 */
 function GlobeIcon({ size = 11 }: { size?: number }): JSX.Element {
@@ -316,7 +448,7 @@ function VerifiedIcon({ size = 11 }: { size?: number }): JSX.Element {
 /** 多选勾（列表勾选框内）。 */
 function CheckMark({ size = 12 }: { size?: number }): JSX.Element {
   return (
-    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 8.5 6.5 12 13 4.5" />
     </svg>
   )
@@ -355,7 +487,7 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
   const [allTags, setAllTags] = useState<Array<{ tag: string; count: number }>>([])
   const [summary, setSummary] = useState<MemorySummaryResponse | null>(null)
   const [changes, setChanges] = useState<ChangeView[]>([])
-  const [changeRange, setChangeRange] = useState<ChangeRange>('today')
+  const [changeRange, setChangeRange] = useState<ChangeRange>('all')
   const [revisions, setRevisions] = useState<RevisionView[]>([])
   const [editing, setEditing] = useState<EditState | null>(null)
   const [moving, setMoving] = useState<MoveState | null>(null)
@@ -368,17 +500,26 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
   const [addContent, setAddContent] = useState('')
   const [addTags, setAddTags] = useState('')
   const [addPinned, setAddPinned] = useState(false)
-  const [addScope, setAddScope] = useState<'global' | 'project'>('global')
+  const [addScope, setAddScope] = useState<'global' | 'project'>('project')
   const [addProject, setAddProject] = useState('')
   // 主从布局：当前选中的条目。
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // 多选删除模式。
   const [selecting, setSelecting] = useState(false)
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(new Set())
-  // 运行时配置（设置 Tab，按需加载）。
+  // 运行时配置（设置视图，按需加载）。
   const [config, setConfigState] = useState<MemoryConfigView | null>(null)
   // 项目别名草稿（选中某项目时可改名）。
   const [aliasDraft, setAliasDraft] = useState<string | null>(null)
+  // 列表排序方向（最新 / 最旧）。
+  const [sortDir, setSortDir] = useState<SortDir>('new')
+  // 分类区：是否展开全部标签。
+  const [catExpanded, setCatExpanded] = useState(false)
+  // 详情：相关记忆 / 历史记录展开。
+  const [related, setRelated] = useState<RelatedState>({ entryId: null, entries: [], loading: false })
+  const [historyExpanded, setHistoryExpanded] = useState(false)
+  // 顶栏搜索框引用（⌘K 聚焦）。
+  const searchRef = useRef<HTMLInputElement | null>(null)
 
   // 当前 tab / 变更范围的最新值（供 mutation 后的刷新决定拉哪些接口）。
   const tabRef = useRef(tab)
@@ -393,6 +534,19 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     return () => { window.clearTimeout(timer) }
   }, [q, debouncedQ])
 
+  // ⌘K / Ctrl+K：聚焦顶栏搜索（面板打开时生效）。
+  useEffect(() => {
+    if (!open) return undefined
+    const onKey = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('keydown', onKey) }
+  }, [open])
+
   // ── 数据加载（分片：条目 / 概览 / 变更 / 修订 / 配置各自独立）───────
 
   const load = useCallback(async (options: { silent?: boolean } = {}) => {
@@ -402,12 +556,14 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     try {
       const scopeParam = scope === 'all' ? undefined : scope === 'global' ? 'global' : 'project'
       const projectParam = scope.startsWith('project:') ? scope.slice('project:'.length) : undefined
+      const isTrash = tabRef.current === 'trash'
       const [list, tagsRes] = await Promise.all([
         current.list({
           scope: scopeParam,
           project: projectParam,
           q: debouncedQ !== '' ? debouncedQ : undefined,
           tag: tag !== '' ? tag : undefined,
+          includeDeprecated: isTrash,
         }),
         current.tags(),
       ])
@@ -427,9 +583,9 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     }
   }, [])
 
-  const loadChanges = useCallback(async (range: ChangeRange) => {
+  const loadChanges = useCallback(async () => {
     try {
-      const response = await apiRef.current.changes(range === 'all' ? 'all' : undefined)
+      const response = await apiRef.current.changes('all')
       setChanges(response.changes)
     } catch (changesError) {
       setError(changesError instanceof Error ? changesError.message : String(changesError))
@@ -452,7 +608,7 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     }
   }, [])
 
-  /** 运行时配置补丁（设置 Tab；host 会钳制越界值并回传结果）。 */
+  /** 运行时配置补丁（设置视图；host 会钳制越界值并回传结果）。 */
   const patchConfig = useCallback(async (patchValue: Partial<MemoryConfigView>) => {
     setError('')
     try {
@@ -475,27 +631,27 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     }
   }, [t])
 
-  /** 改动后的静默刷新：条目 + 概览 + 当前 Tab 的数据。 */
+  /** 改动后的静默刷新：条目 + 概览 + 变更 + 修订（计数依赖）。 */
   const refresh = useCallback(async () => {
     await load({ silent: true })
     await loadSummary()
-    if (tabRef.current === 'changes') await loadChanges(rangeRef.current)
-    if (tabRef.current === 'revisions') await loadRevisions()
+    await loadChanges()
+    await loadRevisions()
   }, [load, loadSummary, loadChanges, loadRevisions])
 
   useEffect(() => {
     if (!open) return
     void load()
     void loadSummary()
-  }, [open, load, loadSummary])
+    void loadChanges()
+    void loadRevisions()
+  }, [open, load, loadSummary, loadChanges, loadRevisions])
 
-  // Tab 按需加载：变更 / 修订 / 设置各自只在被打开时拉取。
+  // 视图按需加载：设置只在被打开时拉取。
   useEffect(() => {
     if (!open) return
-    if (tab === 'changes') void loadChanges(changeRange)
-    else if (tab === 'revisions') void loadRevisions()
-    else if (tab === 'settings') void loadConfig()
-  }, [open, tab, changeRange, loadChanges, loadRevisions, loadConfig])
+    if (tab === 'settings') void loadConfig()
+  }, [open, tab, loadConfig])
 
   useEffect(() => {
     if (open && initialTab !== undefined) setTab(initialTab)
@@ -523,6 +679,20 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     return () => { window.clearTimeout(timer) }
   }, [notice])
 
+  // 相关记忆随选中条目懒加载。
+  useEffect(() => {
+    if (selectedId === null) {
+      setRelated({ entryId: null, entries: [], loading: false })
+      return undefined
+    }
+    let alive = true
+    setRelated(prev => ({ ...prev, entryId: selectedId, loading: true }))
+    void apiRef.current.related(selectedId, 3)
+      .then(response => { if (alive) setRelated({ entryId: selectedId, entries: response.entries, loading: false }) })
+      .catch(() => { if (alive) setRelated({ entryId: selectedId, entries: [], loading: false }) })
+    return () => { alive = false }
+  }, [selectedId])
+
   // ── 裁决 / 条目操作 ──────────────────────────────────────────────────
 
   const run = async (operation: () => Promise<unknown>): Promise<void> => {
@@ -532,12 +702,13 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
       await operation()
     } catch (operationError) {
       setError(operationError instanceof Error ? operationError.message : String(operationError))
+      return
     } finally {
       setBusy(false)
-      // 无论成功与否都刷新：清除幽灵条目（已被外部删除/并发丢失的条目），
-      // 避免"删除报不存在但面板仍显示"。
-      await refresh()
     }
+    // 无论成功与否都刷新：清除幽灵条目（已被外部删除/并发丢失的条目），
+    // 避免"删除报不存在但面板仍显示"。
+    await refresh()
   }
 
   const handlePin = (entry: MemoryEntryView): void => {
@@ -576,6 +747,13 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     askConfirm(t('restoreConfirm'), () => { void run(() => apiRef.current.restore(entry.id)) })
   }
 
+  /** 复制正文到剪贴板。 */
+  const handleCopy = (entry: MemoryEntryView): void => {
+    void navigator.clipboard.writeText(entry.content)
+      .then(() => { setNotice(t('copyDone')) })
+      .catch(() => { setError(t('copyContent')) })
+  }
+
   /** 一键整理（Memory Dream）：当前筛选为某项目时只整理该项目，否则全量。 */
   const handleConsolidate = (): void => {
     askConfirm(t('consolidateConfirm'), () => {
@@ -604,7 +782,6 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
         } finally {
           setConsolidating(false)
           await refresh()
-          await loadRevisions()
         }
       })()
     })
@@ -782,10 +959,26 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
 
   const snapshot = state.status === 'ready' ? state.snapshot : null
   const projects: ProjectView[] = snapshot?.projects ?? []
-  const filtered = useMemo(() => snapshot?.entries ?? [], [snapshot])
+  /** 当前视图的条目集（回收站=只保留已废弃）。 */
+  const filtered = useMemo(() => {
+    const entries = snapshot?.entries ?? []
+    return tabRef.current === 'trash' ? entries.filter(entry => entry.deprecated === true) : entries
+  }, [snapshot, tab])
 
-  const pinned = useMemo(() => filtered.filter(entry => entry.pinned), [filtered])
-  const grouped = useMemo(() => groupEntries(filtered.filter(entry => !entry.pinned)), [filtered])
+  /** 排序后的列表：置顶在前；搜索时保持 host 相关度排序。 */
+  const ordered = useMemo(() => {
+    if (q !== '') return filtered
+    const arr = [...filtered]
+    arr.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      const byTime = b.updatedAt.localeCompare(a.updatedAt)
+      return sortDir === 'new' ? byTime : -byTime
+    })
+    return arr
+  }, [filtered, sortDir, q])
+
+  const pinned = useMemo(() => ordered.filter(entry => entry.pinned), [ordered])
+  const grouped = useMemo(() => groupEntries(ordered.filter(entry => !entry.pinned)), [ordered])
   // 变更按当前 全部/全局/项目 筛选（chips 选择即时生效）。
   const visibleChanges = useMemo(() => changes.filter(change => {
     if (scope === 'global') return change.scope === 'global'
@@ -793,7 +986,10 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
       return change.scope === 'project' && change.projectHash === scope.slice('project:'.length)
     }
     return true
-  }), [changes, scope])
+  }).filter(change => {
+    if (changeRange === 'today') return change.at.slice(0, 10) === (summary?.today ?? '')
+    return true
+  }), [changes, scope, changeRange, summary])
 
   const groupTitles: Record<GroupKey, string> = {
     today: t('groupToday'),
@@ -808,8 +1004,10 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     [filtered, selectedId],
   )
   useEffect(() => {
+    if (tab !== 'all' && tab !== 'trash') return
     if (detail === null && filtered.length > 0) setSelectedId(filtered[0]?.id ?? null)
-  }, [detail, filtered])
+    if (detail === null && filtered.length === 0 && selectedId !== null) setSelectedId(null)
+  }, [detail, filtered, tab, selectedId])
   const closeForms = (): void => { setEditing(null); setMoving(null); setAdding(false) }
   const selectEntry = (entry: MemoryEntryView): void => { closeForms(); setSelectedId(entry.id) }
 
@@ -835,80 +1033,145 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     )
   }
 
-  /** 左列一行条目。 */
-  const renderItemRow = (entry: MemoryEntryView): JSX.Element => {
-    const selected = !selecting && entry.id === selectedId
-    const checked = checkedIds.has(entry.id)
-    const enabled = entry.disabled !== true
-    const retired = entry.deprecated === true
+  /** 当前条目的变更历史（详情页「历史记录」，按时间倒序）。 */
+  const entryChanges = useMemo(() => {
+    if (detail === null) return []
+    return changes
+      .filter(change => change.entryId === detail.id)
+      .sort((a, b) => b.at.localeCompare(a.at))
+  }, [changes, detail])
+
+  /** 历史行文案：新增=创建；其他直接用 host 摘要（已含前缀）。 */
+  const historyDesc = (change: ChangeView): string => {
+    if (change.action === 'add') return t('changeCreated')
+    const label = changeActionLabel(change.action, t)
+    if (change.summary.startsWith(label)) return change.summary
+    return `${label}：${change.summary}`
+  }
+
+  /** 相关记忆（选中条目匹配时的结果）。 */
+  const relatedEntries = useMemo(
+    () => (related.entryId !== null && detail !== null && related.entryId === detail.id ? related.entries : []),
+    [related, detail],
+  )
+
+  /** 左侧分类可见集：默认前 5 + 「更多分类」展开全部。 */
+  const visibleCats = useMemo(
+    () => (catExpanded ? allTags : allTags.slice(0, 5)),
+    [allTags, catExpanded],
+  )
+
+  /** 变更导航计数：优先全量 changeCount，旧 host 无该字段时回落 todayChanges。 */
+  const changeCount = summary?.changeCount ?? summary?.todayChanges ?? 0
+
+  // ── 渲染函数 ─────────────────────────────────────────────────────────
+
+  /** 空态占位（图标 + 主文案 + 可选提示 + 可选动作按钮）。 */
+  const renderEmpty = (
+    text: string,
+    hint?: string,
+    action?: { label: string; onClick: () => void },
+  ): JSX.Element => (
+    <div className={css.empty}>
+      <span className={css.emptyIcon}><BrainIcon size={26} /></span>
+      <span className={css.emptyText}>{text}</span>
+      {hint !== undefined && <span className={css.emptyHint}>{hint}</span>}
+      {action !== undefined && (
+        <Button variant="outline" size="sm" onClick={action.onClick}>{action.label}</Button>
+      )}
+    </div>
+  )
+
+  /** 骨架屏（首次加载）。 */
+  const renderSkeleton = (): JSX.Element => (
+    <div className={css.skeleton} aria-busy="true">
+      <div className={css.skeletonRow} />
+      <div className={css.skeletonRow} />
+      <div className={css.skeletonRow} />
+      <div className={css.skeletonRow} />
+    </div>
+  )
+
+  /** 条目来源/性质图标（置顶星 > 长期层叠 > 手动笔 > 自动闪光；颜色按 kind）。 */
+  const entryIcon = (entry: MemoryEntryView, size = 16): JSX.Element => {
+    const color = KIND_COLORS[entry.kind]
+    if (entry.pinned) {
+      return <span style={{ color: 'var(--m-primary)' }}><PinIcon size={size} filled /></span>
+    }
+    if (entry.layer === 'long') {
+      return <span style={{ color }}><LayersIcon size={size} /></span>
+    }
+    if (entry.source === 'manual') {
+      return <span style={{ color }}><PenIcon size={size} /></span>
+    }
+    return <span style={{ color }}><SparkIcon size={size} /></span>
+  }
+
+  const renderCheck = (entry: MemoryEntryView): JSX.Element => {
+    const on = selecting ? checkedIds.has(entry.id) : entry.id === selectedId
     return (
-      <li key={entry.id} className={css.itemRow}>
-        <button
-          type="button"
-          className={[
-            css.item,
-            (selecting ? checked : selected) ? css.itemSelected : '',
-            enabled ? '' : css.itemDisabled,
-            retired ? css.itemRetired : '',
-          ].filter(Boolean).join(' ')}
-          data-selected={(selecting ? checked : selected) || undefined}
-          aria-pressed={selecting ? checked : undefined}
-          onClick={() => { if (selecting) toggleChecked(entry.id); else selectEntry(entry) }}
-        >
-          {selecting && (
-            <span className={css.itemCheck} aria-hidden="true">
-              {checked && <CheckMark />}
-            </span>
-          )}
-          <span className={css.itemBody}>
-            <span className={css.itemTitle}>
-              {entry.pinned && <span className={css.pinMark}><PinIcon size={11} filled /></span>}
-              <span className={css.itemTitleText}>{entryTitle(entry.content)}</span>
-              <span
-                className={css.scopeBadge}
-                title={entry.scope === 'global' ? t('scopeGlobal') : projectName(entry.projectHash, projects)}
-              >
-                {entry.scope === 'global' ? <GlobeIcon size={10} /> : <FolderIcon size={10} />}
-                {entry.scope === 'global' ? t('scopeGlobal') : projectName(entry.projectHash, projects)}
-              </span>
-              {!enabled && <span className={css.disabledMark}>{t('disabledTag')}</span>}
-              {retired && <span className={css.retiredMark}>{t('retiredTag')}</span>}
-            </span>
-            <span className={css.itemSnippet}>{entrySnippet(entry.content)}</span>
-            <span className={css.itemFoot}>
-              <span className={css.itemTime}>{relativeTime(entry.updatedAt)}</span>
-              <span
-                className={css.itemScore}
-                style={{ ['--pct' as string]: `${importancePercent(entry.importance)}%` }}
-                title={`${t('importanceTitle')} ${Number(entry.importance).toFixed(1)}`}
-              />
-            </span>
-          </span>
-        </button>
-        {/* 行内启用开关：span role=switch（li>button 内禁嵌套 button），点击不触发行选中 */}
-        {!selecting && (
-          <span
-            role="switch"
-            aria-checked={enabled}
-            aria-label={enabled ? t('enabledAria') : t('disabledAria')}
-            title={enabled ? t('disable') : t('enable')}
-            tabIndex={0}
-            className={`${css.miniSwitch} ${enabled ? css.miniSwitchOn : ''}`}
-            onClick={(event) => { event.stopPropagation(); handleEnable(entry) }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                event.stopPropagation()
-                handleEnable(entry)
-              }
-            }}
-          />
-        )}
-      </li>
+      <span className={`${css.entryCheck}${on ? ` ${css.entryCheckOn}` : ''}`} aria-hidden="true">
+        {on && <CheckMark size={11} />}
+      </span>
     )
   }
 
-  /** 详情区头部操作钮组。 */
+  /** 作用域小徽章（列表行内）。 */
+  const renderScopeChip = (entry: MemoryEntryView): JSX.Element => (
+    <span className={css.entryChip} title={t('scopeBadgeTitle')}>
+      {entry.scope === 'global' ? <GlobeIcon size={9} /> : <FolderIcon size={9} />}
+      {entry.scope === 'global' ? t('scopeGlobal') : projectName(entry.projectHash, projects)}
+    </span>
+  )
+
+  /** 置顶条目（大卡：图标 + 标题 + 摘要 + 时间行）。 */
+  const renderEntryCard = (entry: MemoryEntryView): JSX.Element => {
+    const selected = !selecting && entry.id === selectedId
+    const cls = [css.entryCard, selected ? css.entryCardSel : ''].filter(Boolean).join(' ')
+    return (
+      <button
+        key={entry.id}
+        type="button"
+        className={cls}
+        aria-pressed={selected}
+        onClick={() => { if (selecting) toggleChecked(entry.id); else selectEntry(entry) }}
+      >
+        <span className={css.entryTop}>
+          <span className={css.entryIcon}>{entryIcon(entry, 17)}</span>
+          <span className={css.entryTitleTxt}>{entryTitle(entry.content)}</span>
+          {renderScopeChip(entry)}
+          {renderCheck(entry)}
+        </span>
+        <span className={css.entrySnippet}>{entrySnippet(entry.content)}</span>
+        <span className={css.entryFootRow}>
+          <span className={css.entryTime}>{relativeTime(entry.updatedAt)}</span>
+          <span className={css.entryDot} />
+        </span>
+      </button>
+    )
+  }
+
+  /** 紧凑条目行（时间分组内：图标 + 标题 + 徽章 + 勾圆）。 */
+  const renderEntryRow = (entry: MemoryEntryView): JSX.Element => {
+    const selected = !selecting && entry.id === selectedId
+    const cls = [css.entryRow, selected ? css.entryRowSel : ''].filter(Boolean).join(' ')
+    return (
+      <button
+        key={entry.id}
+        type="button"
+        className={cls}
+        aria-pressed={selected}
+        onClick={() => { if (selecting) toggleChecked(entry.id); else selectEntry(entry) }}
+      >
+        <span className={css.entryRowIcon}>{entryIcon(entry, 16)}</span>
+        <span className={css.entryTitleTxt}>{entryTitle(entry.content)}</span>
+        {renderScopeChip(entry)}
+        {renderCheck(entry)}
+      </button>
+    )
+  }
+
+  /** 详情区头部操作钮组（置顶 / 编辑 / 复制 / 移动 / 启停 / 废弃 / 删除）。 */
   const detailActions = (entry: MemoryEntryView): JSX.Element => {
     const enabled = entry.disabled !== true
     const retired = entry.deprecated === true
@@ -917,6 +1180,21 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
         <Tooltip label={entry.pinned ? t('unpin') : t('pin')} side="bottom" delayMs={500}>
           <button type="button" className={css.iconAction} aria-label={entry.pinned ? t('unpin') : t('pin')} disabled={busy} onClick={() => { handlePin(entry) }}>
             <PinIcon size={14} filled={entry.pinned} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t('edit')} side="bottom" delayMs={500}>
+          <button type="button" className={css.iconAction} aria-label={t('edit')} disabled={busy} onClick={() => { startEdit(entry) }}>
+            <IconEditOutline16 size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t('copyContent')} side="bottom" delayMs={500}>
+          <button type="button" className={css.iconAction} aria-label={t('copyContent')} disabled={busy} onClick={() => { handleCopy(entry) }}>
+            <CopyIcon size={14} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t('move')} side="bottom" delayMs={500}>
+          <button type="button" className={css.iconAction} aria-label={t('move')} disabled={busy} onClick={() => { startMove(entry) }}>
+            <IconFolderOpenOutline16 size={14} />
           </button>
         </Tooltip>
         <Tooltip label={enabled ? t('disable') : t('enable')} side="bottom" delayMs={500}>
@@ -930,17 +1208,6 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
             <PowerIcon size={14} dim={!enabled} />
           </button>
         </Tooltip>
-        <Tooltip label={t('edit')} side="bottom" delayMs={500}>
-          <button type="button" className={css.iconAction} aria-label={t('edit')} disabled={busy} onClick={() => { startEdit(entry) }}>
-            <IconEditOutline16 size={14} />
-          </button>
-        </Tooltip>
-        <Tooltip label={t('move')} side="bottom" delayMs={500}>
-          <button type="button" className={css.iconAction} aria-label={t('move')} disabled={busy} onClick={() => { startMove(entry) }}>
-            <IconFolderOpenOutline16 size={14} />
-          </button>
-        </Tooltip>
-        {/* schema v3：soft retire（保留数据）/ restore（复活已废弃）——与彻底删除并排。 */}
         {retired ? (
           <Tooltip label={t('restore')} side="bottom" delayMs={500}>
             <button type="button" className={css.iconAction} aria-label={t('restore')} disabled={busy} onClick={() => { handleRestore(entry) }}>
@@ -950,7 +1217,7 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
         ) : (
           <Tooltip label={t('retire')} side="bottom" delayMs={500}>
             <button type="button" className={css.iconAction} aria-label={t('retire')} disabled={busy} onClick={() => { handleRetire(entry) }}>
-              <PowerIcon size={14} dim />
+              <RingOffIcon size={14} />
             </button>
           </Tooltip>
         )}
@@ -999,55 +1266,348 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     </>
   )
 
-  /** 空态占位（图标 + 主文案 + 可选提示 + 可选动作按钮）。 */
-  const renderEmpty = (
-    text: string,
-    hint?: string,
-    action?: { label: string; onClick: () => void },
-  ): JSX.Element => (
-    <div className={css.empty}>
-      <span className={css.emptyIcon}><BrainIcon size={26} /></span>
-      <span className={css.emptyText}>{text}</span>
-      {hint !== undefined && <span className={css.emptyHint}>{hint}</span>}
-      {action !== undefined && (
-        <Button variant="outline" size="sm" onClick={action.onClick}>{action.label}</Button>
-      )}
+  /** 详情标签 chips（属性 + 时间）。 */
+  const renderDetailChips = (entry: MemoryEntryView): JSX.Element => (
+    <div className={css.chips}>
+      <span className={css.chipMute} title={t('scopeBadgeTitle')}>
+        {entry.scope === 'global' ? <GlobeIcon /> : <FolderIcon />}
+        {entry.scope === 'global' ? t('scopeGlobal') : projectName(entry.projectHash, projects)}
+      </span>
+      {entry.source === 'manual'
+        ? <span className={css.chipAccent}><PenIcon />{t('sourceManual')}</span>
+        : <span className={css.chipMute}><SparkIcon />{t('sourceExtract')}</span>}
+      <span className={css.chipMute}>{t(KIND_LABEL[entry.kind])}</span>
+      {entry.layer === 'long' && <span className={css.chipWarn}><LayersIcon />{t('groupLongterm')}</span>}
+      {entry.pinned && <span className={css.chipWarn}><PinIcon size={11} filled />{t('tabPinned')}</span>}
+      {entry.verified
+        ? <span className={css.chipOk}><VerifiedIcon />{t('verified')}</span>
+        : <span className={css.chipMute}>{t('unverified')}</span>}
+      {entry.deprecated === true && <span className={css.chipWarn}>{t('retiredTag')}</span>}
+      {entry.disabled === true && <span className={css.chipMute}>{t('disabledTag')}</span>}
+      <span className={css.chipTime} title={absoluteTime(entry.updatedAt)}>{relativeTime(entry.updatedAt)}</span>
     </div>
   )
 
-  /** 骨架屏（首次加载）。 */
-  const renderSkeleton = (): JSX.Element => (
-    <div className={css.skeleton} aria-busy="true">
-      <div className={css.skeletonRow} />
-      <div className={css.skeletonRow} />
-      <div className={css.skeletonRow} />
-      <div className={css.skeletonRow} />
-    </div>
-  )
+  /** 详情正文（区块：关联信息 / 历史记录 / 相关记忆）。 */
+  const renderDetailExtras = (entry: MemoryEntryView): JSX.Element => {
+    const mainTag = entry.tags[0] ?? null
+    const tagCount = mainTag !== null ? allTags.find(item => item.tag === mainTag)?.count ?? 0 : 0
+    const project = projects.find(item => item.hash === entry.projectHash)
+    const entries = relatedEntries
+    const historyRows = historyExpanded ? entryChanges : entryChanges.slice(0, 3)
+    return (
+      <>
+        <div className={css.sectionTitle}>{t('relationSection')}</div>
+        <div className={css.sectionLine} />
+        <div className={css.relationGrid}>
+          <div className={css.relationCard}>
+            <span className={css.relationLabel}>{t('relationProject')}</span>
+            <span className={css.relationMain}>
+              <span style={{ color: entry.scope === 'global' ? '#9CA3AF' : '#5B8DEF', display: 'inline-flex' }}>
+                {entry.scope === 'global' ? <GlobeIcon size={12} /> : <FolderIcon size={12} />}
+              </span>
+              {entry.scope === 'global' ? t('scopeGlobal') : (project?.alias ?? projectName(entry.projectHash, projects))}
+            </span>
+            <span className={css.relationSub} title={project?.path ?? ''}>
+              {entry.scope === 'global' ? t('scopeGlobal') : (project?.path ?? '')}
+            </span>
+          </div>
+          <div className={css.relationCard}>
+            <span className={css.relationLabel}>{t('relationCategory')}</span>
+            <span className={css.relationMain}>
+              <span className={css.catDot} style={{ ['--dot' as string]: mainTag !== null ? DOT_COLORS[hashOf(mainTag) % DOT_COLORS.length] : '#CED2DA' }} />
+              {mainTag ?? '—'}
+            </span>
+            <span className={css.relationSub}>
+              {mainTag !== null ? t('tagCountSuffix', { n: tagCount }) : t('unverified')}
+            </span>
+          </div>
+        </div>
+        <div className={css.sectionTitle}>{t('historyTitle')}</div>
+        <div className={css.sectionLine} />
+        {entryChanges.length === 0 ? (
+          <div className={css.historyDesc}>{t('historyEmpty')}</div>
+        ) : (
+          <div className={css.historyList}>
+            {historyRows.map(change => (
+              <div key={change.id} className={css.historyRow}>
+                <span className={css.historyTime}>{relativeTime(change.at)}</span>
+                <span className={css.historyDesc}>{historyDesc(change)}</span>
+              </div>
+            ))}
+            {entryChanges.length > 3 && (
+              <button
+                type="button"
+                className={css.historyLink}
+                onClick={() => { setHistoryExpanded(value => !value) }}
+              >
+                {historyExpanded ? t('historyCollapse') : t('historyAll')}
+                <span>▾</span>
+              </button>
+            )}
+          </div>
+        )}
+        <div className={css.sectionTitle}>{t('relatedTitle')} ({entries.length})</div>
+        <div className={css.sectionLine} />
+        {entries.length === 0 ? (
+          <div className={css.historyDesc}>{related.loading ? t('consolidating') : t('relatedEmpty')}</div>
+        ) : (
+          <div className={css.relatedGrid}>
+            {entries.map(relatedEntry => (
+              <button
+                key={relatedEntry.id}
+                type="button"
+                className={css.relatedCard}
+                onClick={() => { selectEntry(relatedEntry) }}
+              >
+                <span className={css.relatedTitleTxt}>{entryTitle(relatedEntry.content)}</span>
+                <span className={css.relatedSub}>
+                  {relatedEntry.scope === 'global' ? <GlobeIcon size={9} /> : <FolderIcon size={9} />}
+                  {relatedEntry.scope === 'global' ? t('scopeGlobal') : projectName(relatedEntry.projectHash, projects)}
+                  <span>·</span>
+                  {relatedEntry.tags[0] ?? t('retiredTag')}
+                </span>
+                <span className={css.relatedArrow}>↗</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </>
+    )
+  }
 
-  if (!open) return null
+  /** 右栏内容（详情 / 表单）。 */
+  const renderDetailPane = (): JSX.Element => {
+    if (adding) {
+      return (
+        <div className={css.detailForm}>
+          <span className={css.formTitle}>{t('addTitle')}</span>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('addContentPlaceholder')}</span>
+            <textarea
+              className={css.inlineTextarea}
+              style={{ minHeight: 200 }}
+              value={addContent}
+              placeholder={t('addContentPlaceholder')}
+              aria-label={t('addContentPlaceholder')}
+              autoFocus
+              onChange={(event) => { setAddContent(event.currentTarget.value) }}
+            />
+          </label>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('addTagsPlaceholder')}</span>
+            <input
+              className={css.inlineInput}
+              value={addTags}
+              placeholder={t('addTagsPlaceholder')}
+              aria-label={t('addTagsPlaceholder')}
+              onChange={(event) => { setAddTags(event.currentTarget.value) }}
+            />
+          </label>
+          <div className={css.addMeta}>
+            <label className={css.check}>
+              <input type="checkbox" checked={addPinned} onChange={(event) => { setAddPinned(event.currentTarget.checked) }} />
+              {t('addPinned')}
+            </label>
+            {scopeFields('dsh-memory-add-scope', addScope, setAddScope, addProject, setAddProject)}
+          </div>
+          <div className={css.editButtons}>
+            <Button variant="outline" disabled={busy} onClick={() => { setAdding(false) }}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={busy || addContent.trim() === ''} onClick={saveAdd}>{t('save')}</Button>
+          </div>
+        </div>
+      )
+    }
+    if (editing !== null) {
+      return (
+        <div className={css.detailForm}>
+          <span className={css.formTitle}>{t('editTitle')}</span>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('addContentPlaceholder')}</span>
+            <textarea
+              className={css.inlineTextarea}
+              style={{ minHeight: 200 }}
+              value={editing.content}
+              aria-label={t('edit')}
+              onChange={(event) => { setEditing({ ...editing, content: event.currentTarget.value }) }}
+            />
+          </label>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>{t('tagEditPlaceholder')}</span>
+            <input
+              className={css.inlineInput}
+              value={editing.tags}
+              placeholder={t('tagEditPlaceholder')}
+              aria-label={t('tagEditPlaceholder')}
+              onChange={(event) => { setEditing({ ...editing, tags: event.currentTarget.value }) }}
+            />
+          </label>
+          <div className={css.fieldRow}>
+            <label className={css.field}>
+              <span className={css.fieldLabel}>{t('importanceField')}</span>
+              <input
+                type="number"
+                className={css.numberInput}
+                min={1}
+                max={20}
+                step={0.5}
+                value={editing.importance}
+                aria-label={t('importanceField')}
+                onChange={(event) => {
+                  const next = Number(event.currentTarget.value)
+                  if (Number.isFinite(next)) setEditing({ ...editing, importance: Math.max(1, Math.min(20, next)) })
+                }}
+              />
+            </label>
+            <label className={css.field}>
+              <span className={css.fieldLabel}>{t('kindLabel')}</span>
+              <select
+                className={css.tagSelect}
+                value={editing.kind}
+                aria-label={t('kindLabel')}
+                onChange={(event) => { setEditing({ ...editing, kind: event.currentTarget.value as MemoryKind }) }}
+              >
+                {KINDS.map(kind => (
+                  <option key={kind} value={kind}>{t(KIND_LABEL[kind])}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className={css.addMeta}>
+            <label className={css.check}>
+              <input type="checkbox" checked={editing.pinned} onChange={(event) => { setEditing({ ...editing, pinned: event.currentTarget.checked }) }} />
+              {t('pin')}
+            </label>
+            {scopeFields(`dsh-memory-edit-scope-${editing.entryId}`, editing.scope, (next) => {
+              setEditing({ ...editing, scope: next, projectHash: next === 'global' ? null : editing.projectHash })
+            }, editing.projectHash ?? '', (hash) => { setEditing({ ...editing, scope: 'project', projectHash: hash }) })}
+          </div>
+          <div className={css.editButtons}>
+            <Button variant="outline" disabled={busy} onClick={() => { setEditing(null) }}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={busy || editing.content.trim() === ''} onClick={saveEdit}>{t('save')}</Button>
+          </div>
+        </div>
+      )
+    }
+    if (moving !== null) {
+      return (
+        <div className={css.detailForm}>
+          <span className={css.formTitle}>{t('moveTitle')}</span>
+          <div className={css.addMeta}>
+            {scopeFields(`dsh-memory-move-scope-${moving.entryId}`, moving.target, (next) => {
+              setMoving({ ...moving, target: next })
+            }, moving.project, (hash) => { setMoving({ ...moving, target: 'project', project: hash }) })}
+          </div>
+          <div className={css.editButtons}>
+            <Button variant="outline" disabled={busy} onClick={() => { setMoving(null) }}>{t('cancel')}</Button>
+            <Button
+              variant="primary"
+              disabled={busy || (moving.target === 'project' && moving.project.trim() === '')}
+              onClick={saveMove}
+            >
+              {t('save')}
+            </Button>
+          </div>
+        </div>
+      )
+    }
+    if (detail !== null) {
+      return (
+        <div key={detail.id} className={css.detailAnim}>
+          <div className={css.detailHead}>
+            <h3 className={css.detailTitle}>{entryTitle(detail.content)}</h3>
+            {detailActions(detail)}
+          </div>
+          {renderDetailChips(detail)}
+          <div className={css.importanceRow}>
+            <span className={css.importanceIcon}><ShieldIcon size={14} /></span>
+            <span className={css.importanceLabel}>{t('importanceTitle')}</span>
+            <span className={css.importanceBar} role="img" aria-label={t('importanceTitle')}>
+              <i style={{ width: `${importancePercent(detail.importance)}%` }} />
+            </span>
+            <span className={css.importanceValue}>{Number(detail.importance).toFixed(1)}</span>
+            <span className={css.topStatSep}>|</span>
+            <span className={css.importanceLabel}>{t('confidenceTitle')}</span>
+            <span className={css.importanceValue}>{Math.round(detail.confidence * 100)}%</span>
+          </div>
+          <div className={css.detailBody}>
+            <MarkstreamMarkdown text={detail.content} streaming={false} />
+          </div>
+          {detail.tags.length > 0 && (
+            <div className={css.detailTags}>
+              {detail.tags.map(tagName => (
+                <button
+                  key={tagName}
+                  type="button"
+                  className={tag === tagName ? `${css.chip} ${css.chipActive}` : css.chip}
+                  onClick={() => { setTag(tag === tagName ? '' : tagName) }}
+                >
+                  {tagName}
+                </button>
+              ))}
+            </div>
+          )}
+          {renderDetailExtras(detail)}
+          <div className={css.detailFoot}>
+            <span>{t('versionTitle', { n: detail.version })}</span>
+            <span className={css.statDot} aria-hidden="true" />
+            <span>{t('createdAtLabel', { time: absoluteTime(detail.createdAt) })}</span>
+            <span className={css.statDot} aria-hidden="true" />
+            <span>{detail.lastHitAt === null ? t('neverHit') : t('lastHitLabel', { time: relativeTime(detail.lastHitAt) })}</span>
+          </div>
+        </div>
+      )
+    }
+    // 列表为空（无条目可看）时不叠第二个空态盒，保持中栏空态独白。
+    if (filtered.length === 0) return <div />
+    return renderEmpty(
+      tab === 'trash' ? t('trashEmpty') : t('selectHint'),
+      tab === 'trash' ? t('consolidateHint') : undefined,
+    )
+  }
 
-  const selectedProject = scope.startsWith('project:')
-    ? projects.find(candidate => candidate.hash === scope.slice('project:'.length))
-    : undefined
-
-  /* 作用域下拉（全部 / 全局 / 各项目）：「全部」工具栏与「变更」工具行共用，
-     受控同一个 scope 状态——两处切换保持同步。 */
+  /** 作用域下拉（全部 / 全局 / 各项目）：「变更」工具行使用（列表筛选已由左栏导航承担）。 */
   const scopeSelectEl = (
     <select
-      className={`${css.tagSelect} ${css.scopeSelect}`}
+      className={`${css.filterSelect} ${css.scopeSelect}`}
       value={scope}
       aria-label={t('scopeFilterLabel')}
       onChange={(event) => { setScope(event.currentTarget.value as ScopeFilter) }}
     >
-      <option value="all">{t('scopeAllOption', { n: summary?.entryCount ?? 0 })}</option>
-      <option value="global">{t('scopeGlobalOption', { n: summary?.globalCount ?? 0 })}</option>
+      <option value="all">{t('filterAllProjects')} ({summary?.entryCount ?? 0})</option>
+      <option value="global">{t('scopeGlobal')} ({summary?.globalCount ?? 0})</option>
       {projects.map(project => (
         <option key={project.hash} value={`project:${project.hash}`}>
           {project.alias ?? project.path.split(/[\\/]/).filter(Boolean).at(-1) ?? project.hash} ({project.entryCount})
         </option>
       ))}
     </select>
+  )
+
+  const selectedProject = scope.startsWith('project:')
+    ? projects.find(candidate => candidate.hash === scope.slice('project:'.length))
+    : undefined
+
+  if (!open) return null
+
+  /* 左侧导航项。 */
+  const navItem = (key: MemoryTab, icon: JSX.Element, label: string, count: number): JSX.Element => (
+    <button
+      key={key}
+      type="button"
+      className={tab === key ? `${css.navItem} ${css.navItemActive}` : css.navItem}
+      aria-current={tab === key ? 'page' : undefined}
+      onClick={() => {
+        setTab(key)
+        closeForms()
+        exitSelecting()
+        if (key === 'all') { setScope('all'); setTag('') }
+      }}
+    >
+      <span className={css.navIcon}>{icon}</span>
+      {label}
+      {count > 0 && <span className={css.navCount}>{count}</span>}
+    </button>
   )
 
   return (
@@ -1058,513 +1618,429 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
       anchor={anchor}
       onCardMouseEnter={onCardMouseEnter}
       onCardMouseLeave={onCardMouseLeave}
-      width={1200}
+      width={1312}
+      bottomInset={300}
       ariaLabel={t('panelTitle')}
       solid
     >
-      <PshHead title={t('panelTitle')} closeLabel={t('close')} onClose={onClose} />
       <PshBody className={css.modalBody}>
       <div className={`${css.panel} ${modalStaggerClass}`} aria-busy={state.status === 'loading'}>
-        {/* 头部：Tab 组 + 统计条 */}
-        <div className={css.head}>
-          <div className={css.tabs} role="tablist">
-            {(['all', 'changes', 'revisions', 'settings'] as const).map(key => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={tab === key}
-                className={tab === key ? `${css.tab} ${css.tabActive}` : css.tab}
-                onClick={() => { setTab(key); closeForms(); exitSelecting() }}
-              >
-                {key === 'all' ? t('tabAll')
-                  : key === 'changes' ? t('tabChanges')
-                    : key === 'revisions' ? t('tabRevisions') : t('tabSettings')}
-                {key === 'changes' && summary !== null && summary.todayChanges > 0 && (
-                  <span className={css.tabCount}>{summary.todayChanges}</span>
-                )}
-              </button>
-            ))}
+        {/* ── 左栏：品牌 / 导航 / 项目 / 分类 / 设置 ── */}
+        <aside className={css.sidebar}>
+          <div className={css.sidebarBrand}>
+            <span className={css.sidebarLogo}><BoxIcon size={14} /></span>
+            <span className={css.sidebarTitle}>{t('panelTitle')}</span>
           </div>
-          {summary !== null && (
-            <div className={css.statBar}>
-              <span className={`${css.stat} ${css.statLong}`}>
-                <span className={css.statValue}>{summary.entryCount}</span>
-                {t('statEntries')}
-              </span>
-              <span className={`${css.statDot} ${css.statLong}`} aria-hidden="true" />
-              <span className={`${css.stat} ${css.statLong}`}>
-                <span className={css.statValue}>{summary.projectCount}</span>
-                {t('statProjects')}
-              </span>
-              <span className={`${css.statDot} ${css.statLong}`} aria-hidden="true" />
-              {summary.pinnedCount !== undefined && (
-                <span className={css.stat} title={t('tabPinned')}>
-                  <PinIcon size={11} filled />
-                  <span className={css.statValue}>{summary.pinnedCount}</span>
-                </span>
-              )}
-              {summary.longtermCount !== undefined && (
-                <span className={css.stat} title={t('groupLongterm')}>
-                  <LayersIcon size={11} />
-                  <span className={css.statValue}>{summary.longtermCount}</span>
-                </span>
-              )}
-              {summary.disabledCount !== undefined && summary.disabledCount > 0 && (
-                <span className={css.stat} title={t('disabledTag')}>
-                  <PowerIcon size={11} dim />
-                  <span className={css.statValue}>{summary.disabledCount}</span>
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 项目上下文条：只在筛选到具体项目时出现（项目名 + 别名 / 自动记忆 / 清空）。
-            作用域切换本身已收进工具栏的下拉，这里不再铺一排项目胶囊。 */}
-        {tab !== 'settings' && selectedProject !== undefined && (
-          <div className={css.topRow}>
-            <span className={css.projectName} title={selectedProject.path}>
-              <FolderIcon size={12} />
-              {selectedProject.alias ?? selectedProject.path.split(/[\\/]/).filter(Boolean).at(-1) ?? selectedProject.hash}
-            </span>
-            <div className={css.projectTools}>
-              <input
-                className={css.inlineInput}
-                style={{ width: 160 }}
-                value={aliasDraft ?? selectedProject.alias ?? ''}
-                placeholder={t('aliasPlaceholder')}
-                aria-label={t('projectAlias')}
-                title={t('projectAlias')}
-                disabled={busy}
-                onChange={event => { setAliasDraft(event.currentTarget.value) }}
-                onBlur={() => { saveAlias(selectedProject.hash, selectedProject.alias) }}
-                onKeyDown={event => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    saveAlias(selectedProject.hash, selectedProject.alias)
-                  }
-                  if (event.key === 'Escape') setAliasDraft(null)
-                }}
-              />
-              <span className={css.switchLine}>
-                <button
-                  type="button"
-                  className={css.switch}
-                  role="switch"
-                  aria-checked={selectedProject.autoMemory}
-                  aria-label={t('autoMemory')}
-                  disabled={busy}
-                  onClick={() => { void run(() => apiRef.current.meta(selectedProject.hash, { autoMemory: !selectedProject.autoMemory })) }}
-                />
-                <span className={css.switchText}>{t('autoMemory')}</span>
-              </span>
-              <Tooltip label={t('clearProject')} side="top" delayMs={500}>
-                <button type="button" className={`${css.iconAction} ${css.iconActionDanger}`} aria-label={t('clearProject')} disabled={busy} onClick={handleClearProject}>
-                  <IconTrashOutline16 size={14} />
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-        )}
-
-        {/* 搜索 + 标签筛选 + 整理/新建/多选（全部 Tab） */}
-        {tab === 'all' && (selecting ? (
-          <div className={css.searchRow}>
-            <span className={css.batchCount}>{t('selectedCount', { n: checkedIds.size })}</span>
-            <span className={css.barSep} aria-hidden="true" />
-            <Button variant="outline" size="sm" onClick={toggleAllChecked}>{allChecked ? t('collapse') : t('selectAll')}</Button>
-            <span className={css.spacer} />
-            <Button variant="outline" size="sm" disabled={busy} onClick={exitSelecting}>{t('cancel')}</Button>
-            <Button variant="primary" size="sm" disabled={busy || checkedIds.size === 0} onClick={deleteChecked}>
-              {t('delete')} ({checkedIds.size})
-            </Button>
-          </div>
-        ) : (
-          <div className={css.searchRow}>
-            <span className={css.searchBox}>
-              <span className={css.searchIcon}><IconSearchOutline16 size={14} /></span>
-              <input
-                className={css.searchInput}
-                value={q}
-                placeholder={t('searchPlaceholder')}
-                aria-label={t('searchPlaceholder')}
-                onChange={(event) => { setQ(event.currentTarget.value) }}
-                onKeyDown={event => { if (event.key === 'Escape' && q !== '') { event.preventDefault(); setQ('') } }}
-              />
-              {q !== '' && (
-                <button type="button" className={css.searchClear} aria-label={t('cancel')} onClick={() => { setQ('') }}>
-                  <IconCloseFill14 size={12} />
-                </button>
-              )}
-            </span>
-            {scopeSelectEl}
-            <select
-              className={css.tagSelect}
-              value={tag}
-              aria-label={t('tagFilterPlaceholder')}
-              onChange={(event) => { setTag(event.currentTarget.value) }}
-            >
-              <option value="">{t('tagFilterPlaceholder')}</option>
-              {allTags.map(item => (
-                <option key={item.tag} value={item.tag}>{item.tag} ({item.count})</option>
-              ))}
-            </select>
-            <span className={css.spacer} />
-            <span className={css.barSep} aria-hidden="true" />
-            <Tooltip label={t('retry')} side="top" delayMs={500}>
-              <button type="button" className={css.iconAction} aria-label={t('retry')} disabled={busy} onClick={() => { void refresh() }}>
-                <IconRefreshOutline14 />
-              </button>
-            </Tooltip>
-            <Tooltip label={consolidating ? t('consolidating') : t('consolidateHint')} side="top" delayMs={500}>
-              <button
-                type="button"
-                className={consolidating ? `${css.iconAction} ${css.iconActionBusy}` : css.iconAction}
-                aria-label={t('consolidate')}
-                disabled={busy || consolidating}
-                onClick={handleConsolidate}
-              >
-                <IconSparkle16 size={14} />
-              </button>
-            </Tooltip>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<IconPlusOutline16 size={14} />}
-              aria-expanded={adding}
-              onClick={() => {
-                setAdding(value => !value)
-                setEditing(null)
-                setMoving(null)
+          <button
+            type="button"
+            className={css.sidebarAdd}
+            aria-expanded={adding}
+            onClick={() => {
+              setAdding(value => !value)
+              setEditing(null)
+              setMoving(null)
+              if (!adding) {
                 if (scope.startsWith('project:')) {
                   setAddScope('project')
                   setAddProject(scope.slice('project:'.length))
                 }
+              }
+            }}
+          >
+            <IconPlusOutline16 size={14} />
+            {t('add')}
+          </button>
+          <nav className={css.navList}>
+            {navItem('all', <BoxIcon size={15} />, t('navAll'), summary?.entryCount ?? 0)}
+            {navItem('changes', <ClockIcon size={15} />, t('tabChanges'), changeCount)}
+            {navItem('revisions', <HistoryIcon size={15} />, t('tabRevisions'), revisions.length)}
+            {navItem('trash', <TrashIcon size={15} />, t('navTrash'), summary?.deprecatedCount ?? 0)}
+          </nav>
+          <div className={css.navSep} />
+          <div className={css.sectionHeader}>
+            <span className={css.sectionTitleTxt}>{t('navProjects')}</span>
+            <button
+              type="button"
+              className={css.sectionPlus}
+              aria-label={t('add')}
+              onClick={() => {
+                setAdding(true)
+                setEditing(null)
+                setMoving(null)
+                setAddScope('project')
+                if (scope.startsWith('project:')) setAddProject(scope.slice('project:'.length))
               }}
             >
-              {t('add')}
-            </Button>
-            <Button variant="outline" size="sm" disabled={filtered.length === 0} onClick={enterSelecting}>
-              {t('multiSelect')}
-            </Button>
+              +
+            </button>
           </div>
-        ))}
-
-        {/* 变更 Tab：作用域 + 时间范围段控（今天 / 全部）+ 刷新 */}
-        {tab === 'changes' && (
-          <div className={css.searchRow}>
-            {scopeSelectEl}
-            <span className={css.barSep} aria-hidden="true" />
-            <div className={css.segment} role="group" aria-label={t('tabChanges')}>
-              {(['today', 'all'] as const).map(range => (
+          <div className={css.projList}>
+            <button
+              type="button"
+              className={scope === 'all' ? `${css.projRow} ${css.projRowActive}` : css.projRow}
+              onClick={() => { setScope('all'); setTab('all'); closeForms(); exitSelecting() }}
+            >
+              <span className={css.navIcon} style={{ color: 'var(--m-primary)' }}><BoxIcon size={14} /></span>
+              {t('navAllProjects')}
+              <span className={css.navCount}>{summary?.projectCount ?? projects.length}</span>
+            </button>
+            {projects.map(project => {
+              const name = project.alias ?? project.path.split(/[\\/]/).filter(Boolean).at(-1) ?? project.hash
+              const active = scope === `project:${project.hash}`
+              return (
                 <button
-                  key={range}
+                  key={project.hash}
                   type="button"
-                  aria-pressed={changeRange === range}
-                  className={changeRange === range ? `${css.segmentItem} ${css.segmentItemActive}` : css.segmentItem}
-                  onClick={() => { setChangeRange(range) }}
+                  className={active ? `${css.projRow} ${css.projRowActive}` : css.projRow}
+                  onClick={() => {
+                    setScope(`project:${project.hash}`)
+                    setTab('all')
+                    closeForms()
+                    exitSelecting()
+                  }}
                 >
-                  {range === 'today' ? t('changesToday') : t('changesAll')}
+                  <span className={css.navIcon} style={{ color: PROJ_COLORS[hashOf(project.hash) % PROJ_COLORS.length] }}>
+                    <FolderIcon size={12} />
+                  </span>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                  <span className={css.navCount}>{project.entryCount}</span>
                 </button>
-              ))}
-            </div>
-            <span className={css.stat}>
-              <span className={css.statValue}>{visibleChanges.length}</span>
-              {t('statChanges')}
-            </span>
-            <span className={css.spacer} />
-            <Tooltip label={t('retry')} side="top" delayMs={500}>
-              <button type="button" className={css.iconAction} aria-label={t('retry')} disabled={busy} onClick={() => { void loadChanges(changeRange) }}>
-                <IconRefreshOutline14 />
+              )
+            })}
+          </div>
+          <div className={css.navSep} />
+          <div className={css.sectionHeader}>
+            <span className={css.sectionTitleTxt}>{t('navCategories')}</span>
+            <button
+              type="button"
+              className={css.sectionPlus}
+              aria-label={t('add')}
+              onClick={() => {
+                setAdding(true)
+                setEditing(null)
+                setMoving(null)
+              }}
+            >
+              +
+            </button>
+          </div>
+          <div className={css.catList}>
+            {visibleCats.map(cat => {
+              const active = tag === cat.tag
+              return (
+                <button
+                  key={cat.tag}
+                  type="button"
+                  className={active ? `${css.catRow} ${css.catRowActive}` : css.catRow}
+                  onClick={() => { setTag(active ? '' : cat.tag); setTab('all') }}
+                >
+                  <span className={css.catDot} style={{ ['--dot' as string]: DOT_COLORS[hashOf(cat.tag) % DOT_COLORS.length] }} />
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.tag}</span>
+                  <span className={css.navCount}>{cat.count}</span>
+                </button>
+              )
+            })}
+            {allTags.length > 5 && !catExpanded && (
+              <button type="button" className={`${css.catRow} ${css.catMore}`} onClick={() => { setCatExpanded(true) }}>
+                <span className={css.catDot} style={{ ['--dot' as string]: '#CED2DA' }} />
+                {t('navMoreCategories')}
+                <span className={css.navCount}>▾</span>
               </button>
-            </Tooltip>
-          </div>
-        )}
-
-        {notice !== '' && <p className={css.notice}>{notice}</p>}
-        {error !== '' && <p className={css.error} role="alert">{error}</p>}
-
-        {tab === 'all' && state.status === 'loading' && renderSkeleton()}
-        {tab === 'all' && state.status === 'error' && (
-          <div className={css.empty}>
-            <span className={css.emptyIcon}><BrainIcon size={26} /></span>
-            <span className={css.emptyText}>{t('error')}</span>
-            <Button variant="outline" size="sm" onClick={() => { void load() }}>{t('retry')}</Button>
-          </div>
-        )}
-
-        {/* 全部：主从布局（左列表 / 右详情） */}
-        {state.status === 'ready' && tab === 'all' && (
-          <div className={css.split}>
-            {/* 左列：紧凑条目列表（置顶在前 + 时间分组小节） */}
-            {filtered.length === 0 ? (
-              // 空态用 div 承载（ul 里塞非 li 元素不合法）；类名沿用左列几何。
-              <div className={css.listPane}>
-                {renderEmpty(
-                  q !== '' || tag !== '' ? t('searchEmpty') : t('empty'),
-                  q !== '' || tag !== '' ? t('searchEmptyHint') : undefined,
-                  q !== '' || tag !== ''
-                    ? { label: t('clearFilters'), onClick: () => { setQ(''); setTag('') } }
-                    : undefined,
-                )}
-              </div>
-            ) : (
-              <ul className={css.listPane}>
-                {pinned.length > 0 && (
-                  <li className={css.listSection}>
-                    {t('tabPinned')}
-                    <span className={css.listSectionCount}>{pinned.length}</span>
-                  </li>
-                )}
-                {pinned.map(renderItemRow)}
-                {(Object.keys(grouped) as GroupKey[]).map(groupKey => (
-                  grouped[groupKey].length > 0 ? (
-                    [
-                      <li key={`${groupKey}-section`} className={css.listSection}>
-                        {groupTitles[groupKey]}
-                        <span className={css.listSectionCount}>{grouped[groupKey].length}</span>
-                      </li>,
-                      ...grouped[groupKey].map(renderItemRow),
-                    ]
-                  ) : null
-                ))}
-              </ul>
             )}
-            {/* 右侧：详情（查看 / 编辑 / 移动 / 新建） */}
-            <div className={css.detailPane}>
-              {adding ? (
-                <div className={css.detailForm}>
-                  <span className={css.formTitle}>{t('addTitle')}</span>
-                  <label className={css.field}>
-                    <span className={css.fieldLabel}>{t('addContentPlaceholder')}</span>
-                    <textarea
-                      className={css.inlineTextarea}
-                      style={{ minHeight: 200 }}
-                      value={addContent}
-                      placeholder={t('addContentPlaceholder')}
-                      aria-label={t('addContentPlaceholder')}
-                      autoFocus
-                      onChange={(event) => { setAddContent(event.currentTarget.value) }}
-                    />
-                  </label>
-                  <label className={css.field}>
-                    <span className={css.fieldLabel}>{t('addTagsPlaceholder')}</span>
-                    <input
-                      className={css.inlineInput}
-                      value={addTags}
-                      placeholder={t('addTagsPlaceholder')}
-                      aria-label={t('addTagsPlaceholder')}
-                      onChange={(event) => { setAddTags(event.currentTarget.value) }}
-                    />
-                  </label>
-                  <div className={css.addMeta}>
-                    <label className={css.check}>
-                      <input type="checkbox" checked={addPinned} onChange={(event) => { setAddPinned(event.currentTarget.checked) }} />
-                      {t('addPinned')}
-                    </label>
-                    {scopeFields('dsh-memory-add-scope', addScope, setAddScope, addProject, setAddProject)}
-                  </div>
-                  <div className={css.editButtons}>
-                    <Button variant="outline" disabled={busy} onClick={() => { setAdding(false) }}>{t('cancel')}</Button>
-                    <Button variant="primary" disabled={busy || addContent.trim() === ''} onClick={saveAdd}>{t('save')}</Button>
-                  </div>
-                </div>
-              ) : editing !== null ? (
-                <div className={css.detailForm}>
-                  <span className={css.formTitle}>{t('editTitle')}</span>
-                  <label className={css.field}>
-                    <span className={css.fieldLabel}>{t('addContentPlaceholder')}</span>
-                    <textarea
-                      className={css.inlineTextarea}
-                      style={{ minHeight: 200 }}
-                      value={editing.content}
-                      aria-label={t('edit')}
-                      onChange={(event) => { setEditing({ ...editing, content: event.currentTarget.value }) }}
-                    />
-                  </label>
-                  <label className={css.field}>
-                    <span className={css.fieldLabel}>{t('tagEditPlaceholder')}</span>
-                    <input
-                      className={css.inlineInput}
-                      value={editing.tags}
-                      placeholder={t('tagEditPlaceholder')}
-                      aria-label={t('tagEditPlaceholder')}
-                      onChange={(event) => { setEditing({ ...editing, tags: event.currentTarget.value }) }}
-                    />
-                  </label>
-                  <div className={css.fieldRow}>
-                    <label className={css.field}>
-                      <span className={css.fieldLabel}>{t('importanceField')}</span>
-                      <input
-                        type="number"
-                        className={css.numberInput}
-                        min={1}
-                        max={20}
-                        step={0.5}
-                        value={editing.importance}
-                        aria-label={t('importanceField')}
-                        onChange={(event) => {
-                          const next = Number(event.currentTarget.value)
-                          if (Number.isFinite(next)) setEditing({ ...editing, importance: Math.max(1, Math.min(20, next)) })
-                        }}
-                      />
-                    </label>
-                    <label className={css.field}>
-                      <span className={css.fieldLabel}>{t('kindLabel')}</span>
-                      <select
-                        className={css.tagSelect}
-                        value={editing.kind}
-                        aria-label={t('kindLabel')}
-                        onChange={(event) => { setEditing({ ...editing, kind: event.currentTarget.value as MemoryKind }) }}
-                      >
-                        {KINDS.map(kind => (
-                          <option key={kind} value={kind}>{t(KIND_LABEL[kind])}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className={css.addMeta}>
-                    <label className={css.check}>
-                      <input type="checkbox" checked={editing.pinned} onChange={(event) => { setEditing({ ...editing, pinned: event.currentTarget.checked }) }} />
-                      {t('pin')}
-                    </label>
-                    {scopeFields(`dsh-memory-edit-scope-${editing.entryId}`, editing.scope, (next) => {
-                      setEditing({ ...editing, scope: next, projectHash: next === 'global' ? null : editing.projectHash })
-                    }, editing.projectHash ?? '', (hash) => { setEditing({ ...editing, scope: 'project', projectHash: hash }) })}
-                  </div>
-                  <div className={css.editButtons}>
-                    <Button variant="outline" disabled={busy} onClick={() => { setEditing(null) }}>{t('cancel')}</Button>
-                    <Button variant="primary" disabled={busy || editing.content.trim() === ''} onClick={saveEdit}>{t('save')}</Button>
-                  </div>
-                </div>
-              ) : moving !== null ? (
-                <div className={css.detailForm}>
-                  <span className={css.formTitle}>{t('moveTitle')}</span>
-                  <div className={css.addMeta}>
-                    {scopeFields(`dsh-memory-move-scope-${moving.entryId}`, moving.target, (next) => {
-                      setMoving({ ...moving, target: next })
-                    }, moving.project, (hash) => { setMoving({ ...moving, target: 'project', project: hash }) })}
-                  </div>
-                  <div className={css.editButtons}>
-                    <Button variant="outline" disabled={busy} onClick={() => { setMoving(null) }}>{t('cancel')}</Button>
-                    <Button
-                      variant="primary"
-                      disabled={busy || (moving.target === 'project' && moving.project.trim() === '')}
-                      onClick={saveMove}
-                    >
-                      {t('save')}
-                    </Button>
-                  </div>
-                </div>
-              ) : detail !== null ? (
+          </div>
+          <div className={css.sidebarFoot}>
+            <button
+              type="button"
+              className={tab === 'settings' ? `${css.settingsNav} ${css.settingsNavActive}` : css.settingsNav}
+              onClick={() => { setTab('settings'); closeForms(); exitSelecting() }}
+            >
+              <span className={css.navIcon}><GearIcon size={15} /></span>
+              {t('tabSettings')}
+            </button>
+          </div>
+        </aside>
+
+        {/* ── 右区：顶栏 / 筛选行 / 主区 ── */}
+        <div className={css.mainCol}>
+          {/* 顶栏：搜索 + 统计 + 关闭 */}
+          <div className={css.topbar}>
+            <label className={css.topSearch} title={t('cmdK')}>
+              <span className={css.topSearchIcon}><IconSearchOutline16 size={14} /></span>
+              <input
+                ref={searchRef}
+                className={css.topInput}
+                value={q}
+                placeholder={t('searchPlaceholderApp')}
+                aria-label={t('searchPlaceholderApp')}
+                onChange={(event) => { setQ(event.currentTarget.value) }}
+                onKeyDown={event => { if (event.key === 'Escape' && q !== '') { event.preventDefault(); setQ('') } }}
+              />
+              <span className={css.topKbd}>⌘ K</span>
+            </label>
+            <div className={css.topStats}>
+              {summary !== null && (
                 <>
-                  <div className={css.detailHead}>
-                    <h3 className={css.detailTitle}>{entryTitle(detail.content)}</h3>
-                    {detailActions(detail)}
-                  </div>
-                  <div className={css.detailMeta}>
-                    <span className={css.metaBadge} title={detail.scope === 'global' ? t('scopeGlobal') : projectName(detail.projectHash, projects)}>
-                      {detail.scope === 'global' ? <GlobeIcon /> : <FolderIcon />}
-                      {detail.scope === 'global' ? t('scopeGlobal') : projectName(detail.projectHash, projects)}
-                    </span>
-                    <span className={detail.source === 'manual' ? `${css.metaBadge} ${css.metaBadgeAccent}` : css.metaBadge}>
-                      {detail.source === 'manual' ? <PenIcon /> : <SparkIcon />}
-                      {detail.source === 'manual' ? t('sourceManual') : t('sourceExtract')}
-                    </span>
-                    <span className={css.metaBadge} title={t('kindLabel')}>{t(KIND_LABEL[detail.kind])}</span>
-                    {detail.layer === 'long' && (
-                      <span className={`${css.metaBadge} ${css.metaBadgeWarn}`}>
-                        <LayersIcon />
-                        {t('groupLongterm')}
+                  <span className={css.topStat}>
+                    <span className={css.topStatVal}>{summary.entryCount}</span>
+                    {t('statEntries')}
+                  </span>
+                  <span className={css.topStatSep}>·</span>
+                  <span className={css.topStat}>
+                    <span className={css.topStatVal}>{summary.projectCount}</span>
+                    {t('statProjects')}
+                  </span>
+                  {summary.pinnedCount !== undefined && (
+                    <>
+                      <span className={css.topStatSep}>·</span>
+                      <span className={css.topStat} title={t('tabPinned')}>
+                        <span style={{ color: '#F5C242' }}>★</span>
+                        <span className={css.topStatVal}>{summary.pinnedCount}</span>
                       </span>
-                    )}
-                    {detail.pinned && (
-                      <span className={`${css.metaBadge} ${css.metaBadgeWarn}`} title={t('pin')}>
-                        <PinIcon size={11} filled />
-                        {t('tabPinned')}
-                      </span>
-                    )}
-                    {detail.deprecated === true && (
-                      <span className={`${css.metaBadge} ${css.metaBadgeWarn}`} title={t('retire')}>
-                        {t('retiredTag')}
-                      </span>
-                    )}
-                    {detail.verified
-                      ? <span className={css.metaBadge} title={t('verified')}><VerifiedIcon />{t('verified')}</span>
-                      : <span className={`${css.metaBadge} ${css.metaBadgeMuted}`} title={t('unverified')}>{t('unverified')}</span>}
-                    {detail.disabled && <span className={css.disabledMark}>{t('disabledTag')}</span>}
-                    <span className={css.metaTime} title={absoluteTime(detail.updatedAt)}>{relativeTime(detail.updatedAt)}</span>
-                  </div>
-                  <div className={css.importanceRow}>
-                    <span className={css.importanceLabel}>{t('importanceTitle')}</span>
-                    <span className={css.importanceBar} role="img" aria-label={t('importanceTitle')}>
-                      <i style={{ width: `${importancePercent(detail.importance)}%` }} />
-                    </span>
-                    <span className={css.importanceValue}>{Number(detail.importance).toFixed(1)}</span>
-                    <span className={css.importanceLabel}>{t('confidenceTitle')}</span>
-                    <span className={css.importanceValue}>{Math.round(detail.confidence * 100)}%</span>
-                  </div>
-                  <div className={css.detailBody}>
-                    <MarkstreamMarkdown text={detail.content} streaming={false} />
-                  </div>
-                  {detail.tags.length > 0 && (
-                    <div className={css.detailTags}>
-                      {detail.tags.map(tagName => (
-                        <button
-                          key={tagName}
-                          type="button"
-                          className={tag === tagName ? `${css.chip} ${css.chipActive}` : css.chip}
-                          onClick={() => { setTag(tag === tagName ? '' : tagName) }}
-                        >
-                          {tagName}
-                        </button>
-                      ))}
-                    </div>
+                    </>
                   )}
-                  <div className={css.detailFoot}>
-                    <span>{t('versionTitle', { n: detail.version })}</span>
-                    <span className={css.statDot} aria-hidden="true" />
-                    <span>{t('createdAtLabel', { time: absoluteTime(detail.createdAt) })}</span>
-                    <span className={css.statDot} aria-hidden="true" />
-                    <span>{detail.lastHitAt === null ? t('neverHit') : t('lastHitLabel', { time: relativeTime(detail.lastHitAt) })}</span>
-                  </div>
+                  {changeCount > 0 && (
+                    <>
+                      <span className={css.topStatSep}>·</span>
+                      <span className={css.topStat} title={t('tabChanges')}>
+                        <span style={{ color: '#5B8DEF', display: 'inline-flex' }}><LightbulbIcon size={13} /></span>
+                        <span className={css.topStatVal}>{changeCount}</span>
+                      </span>
+                    </>
+                  )}
                 </>
-              ) : (
-                renderEmpty(
-                  filtered.length === 0 ? t('empty') : t('detailPlaceholder'),
-                  filtered.length === 0 ? t('consolidateHint') : undefined,
-                )
               )}
+              <button
+                type="button"
+                className={css.topClose}
+                aria-label={t('close')}
+                onClick={onClose}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
             </div>
           </div>
-        )}
 
-        {/* 变更（按当前 全部/全局/项目 筛选；全宽列表） */}
-        {tab === 'changes' && (
-          visibleChanges.length === 0
-            ? renderEmpty(t('changesEmpty'))
-            : <ul className={css.cardList}>{visibleChanges.map(renderChange)}</ul>
-        )}
+          {/* 筛选行已移除：作用域/分类由左栏导航控制，排序在列表头（保留整理/多选工具栏） */}
 
-        {/* 修订版本（整理前快照，可一键回滚） */}
-        {tab === 'revisions' && (
-          revisions.length === 0
-            ? renderEmpty(t('revisionsEmpty'))
-            : <ul className={css.cardList}>{revisions.map(renderRevision)}</ul>
-        )}
+          {notice !== '' && <p className={css.notice}>{notice}</p>}
+          {error !== '' && <p className={css.error} role="alert">{error}</p>}
 
-        {/* 设置（运行时配置，改动即时生效） */}
-        {tab === 'settings' && (
-          <SettingsTab
-            config={config}
-            busy={busy}
-            t={t}
-            listModels={() => apiRef.current.listModels().then((response: { models: ModelCatalogView[] }) => response.models)}
-            onPatch={patchValue => { void patchConfig(patchValue) }}
-            onReset={() => { askConfirm(t('settingsResetConfirm'), () => { void resetConfig() }) }}
-          />
-        )}
+          {/* 主区框架 */}
+          {tab !== 'changes' && tab !== 'revisions' && tab !== 'settings' && (
+            state.status === 'loading' ? renderSkeleton() : (
+              state.status === 'error' ? (
+                <div className={css.viewFull}>
+                  <div className={css.empty}>
+                    <span className={css.emptyIcon}><BrainIcon size={26} /></span>
+                    <span className={css.emptyText}>{t('error')}</span>
+                    <Button variant="outline" size="sm" onClick={() => { void load() }}>{t('retry')}</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className={css.cols}>
+                  {/* 中栏：列表 */}
+                  <div className={css.listCol}>
+                    {selecting ? (
+                      <div className={css.listHead}>
+                        <span className={css.batchCount}>{t('selectedCount', { n: checkedIds.size })}</span>
+                        <span className={css.barSep} aria-hidden="true" />
+                        <Button variant="outline" size="sm" onClick={toggleAllChecked}>{allChecked ? t('collapse') : t('selectAll')}</Button>
+                        <span className={css.spacer} />
+                        <Button variant="outline" size="sm" disabled={busy} onClick={exitSelecting}>{t('cancel')}</Button>
+                        <Button variant="primary" size="sm" disabled={busy || checkedIds.size === 0} onClick={deleteChecked}>
+                          {t('delete')} ({checkedIds.size})
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className={css.listHead}>
+                        <span className={css.listHeadText}>{t('listCount', { n: filtered.length })}</span>
+                        <span className={css.spacer} />
+                        <button
+                          type="button"
+                          className={css.listSort}
+                          aria-label={t('sortNewest')}
+                          title={sortDir === 'new' ? t('sortNewest') : t('sortOldest')}
+                          onClick={() => { setSortDir(dir => (dir === 'new' ? 'old' : 'new')) }}
+                        >
+                          <SortArrowsIcon size={13} />
+                        </button>
+                        <Tooltip label={consolidating ? t('consolidating') : t('consolidateHint')} side="top" delayMs={500}>
+                          <button
+                            type="button"
+                            className={css.toolBtn}
+                            aria-label={t('consolidate')}
+                            disabled={busy || consolidating}
+                            onClick={handleConsolidate}
+                          >
+                            <IconSparkle16 size={13} />
+                            {t('consolidate')}
+                          </button>
+                        </Tooltip>
+                        <Tooltip label={t('retry')} side="top" delayMs={500}>
+                          <button type="button" className={`${css.toolBtn} ${css.toolBtnIcon}`} aria-label={t('retry')} disabled={busy} onClick={() => { void refresh() }}>
+                            <IconRefreshOutline14 size={13} />
+                          </button>
+                        </Tooltip>
+                        <button type="button" className={css.toolBtn} disabled={filtered.length === 0} onClick={enterSelecting}>
+                          {t('multiSelect')}
+                        </button>
+                      </div>
+                    )}
+                    {/* 项目上下文条：选中具体项目时出现（别名 / 自动记忆 / 清空） */}
+                    {selectedProject !== undefined && !selecting && (
+                      <div className={css.projContext}>
+                        <span className={css.projName} title={selectedProject.path}>
+                          <FolderIcon size={11} />
+                          {selectedProject.alias ?? selectedProject.path.split(/[\\/]/).filter(Boolean).at(-1) ?? selectedProject.hash}
+                        </span>
+                        <input
+                          className={css.inlineInput}
+                          style={{ flex: '1 1 110px', minWidth: 90, width: 'auto' }}
+                          value={aliasDraft ?? selectedProject.alias ?? ''}
+                          placeholder={t('aliasPlaceholder')}
+                          aria-label={t('projectAlias')}
+                          title={t('projectAlias')}
+                          disabled={busy}
+                          onChange={event => { setAliasDraft(event.currentTarget.value) }}
+                          onBlur={() => { saveAlias(selectedProject.hash, selectedProject.alias) }}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              saveAlias(selectedProject.hash, selectedProject.alias)
+                            }
+                            if (event.key === 'Escape') setAliasDraft(null)
+                          }}
+                        />
+                        <span className={css.switchLine}>
+                          <button
+                            type="button"
+                            className={css.switch}
+                            role="switch"
+                            aria-checked={selectedProject.autoMemory}
+                            aria-label={t('autoMemory')}
+                            disabled={busy}
+                            onClick={() => { void run(() => apiRef.current.meta(selectedProject.hash, { autoMemory: !selectedProject.autoMemory })) }}
+                          />
+                          <span className={css.switchText}>{t('autoMemory')}</span>
+                        </span>
+                        <Tooltip label={t('clearProject')} side="top" delayMs={500}>
+                          <button type="button" className={`${css.iconAction} ${css.iconActionDanger}`} aria-label={t('clearProject')} disabled={busy} onClick={handleClearProject}>
+                            <IconTrashOutline16 size={14} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    )}
+                    {filtered.length === 0 ? (
+                      renderEmpty(
+                        tab === 'trash' ? t('trashEmpty') : (q !== '' || tag !== '' ? t('searchEmpty') : t('empty')),
+                        q !== '' || tag !== '' ? t('searchEmptyHint') : undefined,
+                        q !== '' || tag !== ''
+                          ? { label: t('clearFilters'), onClick: () => { setQ(''); setTag('') } }
+                          : undefined,
+                      )
+                    ) : (
+                      <>
+                        {pinned.length > 0 && (
+                          <div className={css.groupSection}>
+                            {t('tabPinned')}
+                            <span className={css.groupSectionCount}>{pinned.length}</span>
+                          </div>
+                        )}
+                        {pinned.map(renderEntryCard)}
+                        {(Object.keys(grouped) as GroupKey[]).map(groupKey => (
+                          grouped[groupKey].length > 0 ? (
+                            <div key={groupKey}>
+                              <div className={css.groupSection}>
+                                {groupTitles[groupKey]}
+                                <span className={css.groupSectionCount}>{grouped[groupKey].length}</span>
+                              </div>
+                              {grouped[groupKey].map(renderEntryRow)}
+                            </div>
+                          ) : null
+                        ))}
+                      </>
+                    )}
+                  </div>
+                  {/* 右栏：详情 */}
+                  <div className={css.detailCol}>
+                    {renderDetailPane()}
+                  </div>
+                </div>
+              )
+            )
+          )}
+
+          {/* 全宽视图：变更 / 修订 / 设置 */}
+          {tab === 'changes' && (
+            <div className={css.viewFull}>
+              <div className={css.searchRow}>
+                {scopeSelectEl}
+                <span className={css.barSep} aria-hidden="true" />
+                <div className={css.segment} role="group" aria-label={t('tabChanges')}>
+                  {(['today', 'all'] as const).map(range => (
+                    <button
+                      key={range}
+                      type="button"
+                      aria-pressed={changeRange === range}
+                      className={changeRange === range ? `${css.segmentItem} ${css.segmentItemActive}` : css.segmentItem}
+                      onClick={() => { setChangeRange(range) }}
+                    >
+                      {range === 'today' ? t('changesToday') : t('changesAll')}
+                    </button>
+                  ))}
+                </div>
+                <span className={css.stat}>
+                  <span className={css.statValue}>{visibleChanges.length}</span>
+                  {t('statChanges')}
+                </span>
+                <span className={css.spacer} />
+                <Tooltip label={t('retry')} side="top" delayMs={500}>
+                  <button type="button" className={css.iconAction} aria-label={t('retry')} disabled={busy} onClick={() => { void loadChanges() }}>
+                    <IconRefreshOutline14 />
+                  </button>
+                </Tooltip>
+              </div>
+              {visibleChanges.length === 0
+                ? renderEmpty(t('changesEmpty'))
+                : <ul className={css.cardList}>{visibleChanges.map(renderChange)}</ul>}
+            </div>
+          )}
+
+          {tab === 'revisions' && (
+            <div className={css.viewFull}>
+              <div className={css.searchRow}>
+                <span className={css.stat}>
+                  <span className={css.statValue}>{revisions.length}</span>
+                  {t('statChanges')}
+                </span>
+                <span className={css.spacer} />
+                <Tooltip label={t('retry')} side="top" delayMs={500}>
+                  <button type="button" className={css.iconAction} aria-label={t('retry')} disabled={busy} onClick={() => { void loadRevisions() }}>
+                    <IconRefreshOutline14 />
+                  </button>
+                </Tooltip>
+              </div>
+              {revisions.length === 0
+                ? renderEmpty(t('revisionsEmpty'))
+                : <ul className={css.cardList}>{revisions.map(renderRevision)}</ul>}
+            </div>
+          )}
+
+          {tab === 'settings' && (
+            <div className={css.viewFull}>
+              <SettingsTab
+                config={config}
+                busy={busy}
+                t={t}
+                listModels={() => apiRef.current.listModels().then((response: { models: ModelCatalogView[] }) => response.models)}
+                onPatch={patchValue => { void patchConfig(patchValue) }}
+                onReset={() => { askConfirm(t('settingsResetConfirm'), () => { void resetConfig() }) }}
+              />
+            </div>
+          )}
+        </div>
       </div>
       </PshBody>
     </PopoverShell>

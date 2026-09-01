@@ -1,7 +1,7 @@
 {
   "name": "dsh-triad",
   "version": "1.0.0",
-  "description": "DSH 三合一扩展插件：用量工作台 · 技能管理 · 长期记忆引擎。零 DSH 源码改动。",
+  "description": "DSH 三合一扩展插件：用量工作台 · 技能管理（含 MCP Server 管理）· 长期记忆引擎。零 DSH 源码改动，一句话安装。",
   "keywords": [
     "dsh",
     "dsh-plugin",
