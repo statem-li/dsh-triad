@@ -1,10 +1,10 @@
 # dsh-triad
 
-DSH 扩展插件：**用量工作台 · 技能管理（含 MCP Server 管理）· 长期记忆引擎**。
+**用量工作台 · 技能与 MCP Server 管理 · 长期记忆引擎** —— 一套插件装齐 DSH 三个工作台。
 
 从 [statem-li/dsh-webui](https://github.com/statem-li/dsh-webui) v0.5.1 拆出这三个模块，
-按 DSH `0.1.2-alpha.1` 的现行契约重写成单个插件。**零 DSH 源码改动**——全部通过
-`cordis.patch.yml` 的 bundle 机制挂载。
+按 DSH `0.1.2-alpha.1` 的现行契约重写为独立插件。全部通过 `cordis.patch.yml` 的
+bundle 机制挂载，**不碰官方源码一行**。
 
 > 装完侧边栏多出一行三个入口：`[用量] [技能] [记忆]`。
 
