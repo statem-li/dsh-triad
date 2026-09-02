@@ -29,9 +29,9 @@ const NAV: Array<{ key: TabKey; label: string; icon: (size?: number, stroke?: nu
   { key: 'accounts', label: '余额/配额', icon: walletIcon },
 ]
 
-/** 每个 tab 的理想卡片尺寸（用户反馈卡片过大：趋势页收成固定尺寸弹层，内容限宽居中）。 */
+/** 每个 tab 的理想卡片尺寸（趋势页 1240→1440：用户要求再往右扩 200px）。 */
 const TAB_SIZES: Record<TabKey, PopoverSize> = {
-  trend: { width: 1240, height: 880 },
+  trend: { width: 1440, height: 880 },
   detail: { width: 1240, height: 860 },
   signal: { width: 1240, height: 860 },
   accounts: { width: 1180, height: 820 },

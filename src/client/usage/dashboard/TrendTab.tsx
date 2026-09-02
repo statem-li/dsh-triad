@@ -369,7 +369,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
   const hitTone: 'up' | 'down' | 'flat' = hitDelta === null ? 'flat' : hitDelta > 0 ? 'up' : hitDelta < 0 ? 'down' : 'flat'
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div style={{ maxWidth: 1380, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* ── KPI 统计行：方块图标 + 大数 + 较昨日/较上期 chip ── */}
       <div className={css.statsRow}>
         <HubStat
