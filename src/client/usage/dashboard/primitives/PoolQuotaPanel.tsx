@@ -134,7 +134,7 @@ const rulesRows: Array<{ title: string; body: string }> = [
   { title: '活动回充', body: '活动期间 Flash-lite 专属池实际消耗按 1:1 折算回充为通用池活动积分，到账后 30 天有效' },
 ]
 
-export function PoolQuotaPanel({ windows, plan }: { windows: QuotaWindow[]; plan?: string }): JSX.Element {
+export function PoolQuotaPanel({ windows, plan, showRules = true }: { windows: QuotaWindow[]; plan?: string; showRules?: boolean }): JSX.Element {
   const [rulesOpen, setRulesOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   useEffect(() => { ensurePoolQuotaStyles(); ensureAccountsStyles() }, [])
@@ -218,33 +218,35 @@ export function PoolQuotaPanel({ windows, plan }: { windows: QuotaWindow[]; plan
         )
       })}
 
-      <div style={{ marginTop: 2 }}>
-        <button
-          type="button"
-          onClick={() => setRulesOpen(o => !o)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent',
-            padding: '6px 2px', cursor: 'pointer', fontSize: 11, color: 'var(--dsw-alias-label-secondary)',
-          }}
-        >
-          <svg className="dsh-pool-chevron" data-open={rulesOpen} width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          积分扣减规则与 5h 窗口约束
-        </button>
-        <div className="dsh-pool-rules" data-open={rulesOpen}>
-          <div className="dsh-pool-rules-inner">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '4px 0 10px 18px' }}>
-              {rulesRows.map(r => (
-                <div key={r.title} style={{ fontSize: 11, lineHeight: 17 }}>
-                  <span style={{ color: 'var(--dsw-alias-label-primary)', fontWeight: 500, marginRight: 8 }}>{r.title}</span>
-                  <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>{r.body}</span>
-                </div>
-              ))}
+      {showRules && (
+        <div style={{ marginTop: 2 }}>
+          <button
+            type="button"
+            onClick={() => setRulesOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent',
+              padding: '6px 2px', cursor: 'pointer', fontSize: 11, color: 'var(--dsw-alias-label-secondary)',
+            }}
+          >
+            <svg className="dsh-pool-chevron" data-open={rulesOpen} width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            积分扣减规则与 5h 窗口约束
+          </button>
+          <div className="dsh-pool-rules" data-open={rulesOpen}>
+            <div className="dsh-pool-rules-inner">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '4px 0 10px 18px' }}>
+                {rulesRows.map(r => (
+                  <div key={r.title} style={{ fontSize: 11, lineHeight: 17 }}>
+                    <span style={{ color: 'var(--dsw-alias-label-primary)', fontWeight: 500, marginRight: 8 }}>{r.title}</span>
+                    <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>{r.body}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

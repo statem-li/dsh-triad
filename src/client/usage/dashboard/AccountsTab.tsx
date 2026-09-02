@@ -9,7 +9,6 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { usageApi, type AccountSnapshot, type ProviderInfo } from './api'
-import type { UsagePayload } from './aggregate'
 import { formatUnits } from './format'
 import { providerPalette } from './theme'
 import { ProgressBar } from './charts/ProgressBar'
@@ -23,8 +22,6 @@ export interface AccountsTabProps {
   refreshTick?: number
   /** 跳转信号 tab（横幅「查看信号中心」）。 */
   onJumpSignal?: () => void
-  /** 跳转明细 tab（抽屉「查看模型/查看日志」）。 */
-  onJumpDetail?: () => void
 }
 
 /* ── 页面排版 ─────────────────────────────────────────────── */
@@ -90,10 +87,9 @@ function LogoMark({ name, color, size = 30 }: { name: string; color: string; siz
   )
 }
 
-export function AccountsTab({ refreshTick, onJumpSignal, onJumpDetail }: AccountsTabProps): JSX.Element {
+export function AccountsTab({ refreshTick, onJumpSignal }: AccountsTabProps): JSX.Element {
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [accounts, setAccounts] = useState<Record<string, AccountSnapshot>>({})
-  const [usage, setUsage] = useState<UsagePayload | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerClosing, setDrawerClosing] = useState(false)
   const [search, setSearch] = useState('')
@@ -111,13 +107,9 @@ export function AccountsTab({ refreshTick, onJumpSignal, onJumpDetail }: Account
 
   const load = (): void => {
     setError(null)
-    Promise.all([
-      usageApi.providers(),
-      usageApi.usage().catch(() => null),
-    ]).then(([p, u]) => {
+    usageApi.providers().then(p => {
       if (p.ok !== true) throw new Error('供应商数据加载失败')
       setProviders(p.providers)
-      setUsage(u !== null && u.ok === true ? u : null)
       setAccounts(prev => {
         // 只保留仍存在的供应商，避免选中项漂移。
         const keep: Record<string, AccountSnapshot> = {}
@@ -195,7 +187,6 @@ export function AccountsTab({ refreshTick, onJumpSignal, onJumpDetail }: Account
   const poolGroups = poolNames.size
 
   const selectedProvider = selectedId !== null ? providers.find(p => p.id === selectedId) ?? null : null
-  const selectedIndex = selectedProvider !== null ? indexOf(selectedProvider.id) : 0
 
   const rowUsage = (p: ProviderInfo): { pct: number; text: string | null } | null => {
     const wins = accounts[p.id]?.windows ?? []
@@ -235,14 +226,8 @@ export function AccountsTab({ refreshTick, onJumpSignal, onJumpDetail }: Account
   const drawer = selectedProvider !== null ? (
     <AccountDrawer
       key={selectedProvider.id}
-      provider={selectedProvider}
       account={accounts[selectedProvider.id] ?? null}
-      usage={usage}
-      index={selectedIndex}
       closing={drawerClosing}
-      onClose={closeDrawer}
-      onJumpDetail={onJumpDetail ?? (() => {})}
-      onManage={() => { setCredentialFor(selectedProvider.id) }}
     />
   ) : null
 

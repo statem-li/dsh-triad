@@ -127,7 +127,7 @@ export function Workbench({ onClose, closing = false, anchor = null, onCardMouse
     ),
     detail: <UsageTab range={range} rangeLabel={rangeLabel} />,
     signal: <SignalTab />,
-    accounts: <AccountsTab onJumpSignal={() => setTab('signal')} onJumpDetail={() => setTab('detail')} />,
+    accounts: <AccountsTab onJumpSignal={() => setTab('signal')} />,
   }
 
   return (
