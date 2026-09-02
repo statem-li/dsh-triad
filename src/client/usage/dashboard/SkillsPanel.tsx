@@ -168,6 +168,20 @@ const SKILL_ZH: Record<string, string> = {
   mcpStatusEnabled: '已启用', mcpStatusDisabled: '已禁用',
   mcpAutostart: '自启动',
   mcpAutostartTitle: '会话启动时自动拉起该 MCP 进程（关闭可节省内存）',
+  // 真实注册状态（mcp-client 桥接）
+  mcpLiveNote: '以下为 DSH 实际注册的 MCP Server·右上开关 = 启用/禁用（实时生效）·报 Session not found 时开关切一次（禁→启）即重连，无需重启 DSH',
+  mcpLiveDisabled: '已禁用',
+  mcpLiveToggleFailed: '切换失败（配置写保护或条目缺失）',
+  mcpLiveEmpty: '未检测到已注册的 MCP Server：在 cordis.patch.yml 添加 mcp-client 条目并重启 DSH 后即可',
+  mcpLiveUnavailable: '状态接口未就绪（host 改动需重启 DSH 服务）：桥接工具仍可用，此页暂无法读取注册表',
+  mcpLiveRegistered: '已注册',
+  mcpLiveRegisteredTitle: '已桥接',
+  mcpLiveToolsOf: '工具',
+  mcpLiveRefresh: '刷新',
+  mcpLiveConfigHint: '添加：编辑 cordis.patch.yml（或使用「添加 MCP Server」生成配置片段）',
+  mcpCopyDone: '已复制 ✓',
+  mcpCopyHint: '已复制配置片段，请粘贴到 cordis.patch.yml 后重启 DSH 生效',
+  mcpLogNewNote: '桥接式 MCP（cordis.patch.yml 配置）无本地连接日志：连接状态以「MCP Server」页真实注册为准；此页仅展示旧版面板的本地记录。',
   // 右侧信息栏（图三）
   mcpWhatTitle: '什么是 MCP?',
   mcpWhatDesc: 'MCP (Model Contest Protocol) 是一个开放协议，它标准化了应用程序向 LLM 提供上下文和工具的方式。',
@@ -505,24 +519,22 @@ function McpConfigIcon({ size = 15 }: { size?: number }): JSX.Element {
 }
 
 /** MCP 视图根：左侧竖排菜单（同技能左栏风格）+ 内容区。 */
-function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd, onToggle, onToggleAutostart, onRemove, onAddCustom, onClearLogs }: {
+function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd, live, onAddCustom, onClearLogs, onRefresh }: {
   t: (key: string) => string
-  tab: 'server' | 'recommend' | 'tools' | 'log' | 'config'
-  onTab: (value: 'server' | 'recommend' | 'tools' | 'log' | 'config') => void
+  tab: 'server' | 'tools' | 'log' | 'config'
+  onTab: (value: 'server' | 'tools' | 'log' | 'config') => void
   onOpenInfo: () => void
   servers: McpServerRow[]
   recommended: McpServerRow[]
   logs: McpLogEntry[]
   onAdd: (row: McpServerRow) => void
-  onToggle: (id: string) => void
-  onToggleAutostart: (id: string) => void
-  onRemove: (id: string) => void
+  live: LiveMcpStatus
   onAddCustom: () => void
   onClearLogs: () => void
+  onRefresh: () => void
 }): JSX.Element {
-  const items: Array<['server' | 'recommend' | 'tools' | 'log' | 'config', string, JSX.Element]> = [
+  const items: Array<['server' | 'tools' | 'log' | 'config', string, JSX.Element]> = [
     ['server', t('mcpServer'), <McpServerMenuIcon size={15} />],
-    ['recommend', t('mcpRecommendMenu'), <McpRecommendIcon size={15} />],
     ['tools', t('mcpTools'), <CapIcon kind="tool" size={15} />],
     ['log', t('mcpLog'), <CapIcon kind="doc" size={15} />],
     ['config', t('mcpConfig'), <McpConfigIcon size={15} />],
@@ -572,11 +584,9 @@ function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd,
       {/* 右侧内容区 */}
       <div className={css.mcpMain}>
         {tab === 'server' ? (
-          <McpServerView t={t} servers={servers} onToggle={onToggle} onToggleAutostart={onToggleAutostart} onRemove={onRemove} onAddCustom={onAddCustom} onOpenInfo={onOpenInfo} />
-        ) : tab === 'recommend' ? (
-          <McpRecommendView t={t} recommended={recommended} servers={servers} onAdd={onAdd} onRemove={onRemove} />
+          <McpServerView t={t} live={live} onAddCustom={onAddCustom} onOpenInfo={onOpenInfo} onRefresh={onRefresh} />
         ) : tab === 'tools' ? (
-          <McpToolsView t={t} servers={servers} />
+          <McpToolsView t={t} live={live} />
         ) : tab === 'log' ? (
           <McpLogsView t={t} logs={logs} onClear={onClearLogs} />
         ) : tab === 'config' ? (
@@ -632,6 +642,56 @@ interface McpLogEntry {
   name: string
 }
 
+/** 真实 MCP 状态（host /api/triad/mcp-status：ctx.tools 中 mcp__* 工具分组）。 */
+interface LiveMcpTool {
+  name: string
+  description: string
+}
+interface LiveMcpServer {
+  serverName: string
+  toolCount: number
+  tools: LiveMcpTool[]
+  /** 配置文件条目信息（启用/禁用开关用）。 */
+  config: { entryId: string | null; disabled: boolean; editable: boolean }
+}
+interface LiveMcpState {
+  at: string
+  serverCount: number
+  toolCount: number
+  servers: LiveMcpServer[]
+}
+type LiveMcpStatus =
+  | { state: 'loading'; data: null }
+  | { state: 'ready'; data: LiveMcpState }
+  | { state: 'unavailable'; data: null }
+
+/** 拉取真实 MCP 注册状态；失败（服务端未重启等）→ unavailable（界面引导重启）。 */
+function useMcpLiveState(): [LiveMcpStatus, () => void] {
+  const [status, setStatus] = useState<LiveMcpStatus>({ state: 'loading', data: null })
+  const load = (): void => {
+    setStatus((current) => (current.state === 'ready' ? current : { state: 'loading', data: null }))
+    void fetch('/api/triad/mcp-status', { headers: { accept: 'application/json' } })
+      .then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.json() })
+      .then((body) => {
+        if (typeof body !== 'object' || body === null || !Array.isArray((body as { servers?: unknown }).servers)) throw new Error('bad shape')
+        const data = body as LiveMcpState
+        setStatus({ state: 'ready', data })
+      })
+      .catch(() => { setStatus({ state: 'unavailable', data: null }) })
+  }
+  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+  return [status, load]
+}
+
+/** 生成 cordis.patch.yml 配置片段（复制用；不写任何存储）。 */
+function mcpConfigureSnippet(name: string, type: 'stdio' | 'http' | 'sse', command: string, url: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'mcp-server'
+  if (type === 'http' || type === 'sse') {
+    return `# ${name}\n- insert:\n    - id: mcp-${slug}\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: ${slug}\n        transport: streamable-http\n        url: ${JSON.stringify(url)}\n        failOnStartupError: false\n`
+  }
+  return `# ${name}\n- insert:\n    - id: mcp-${slug}\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: ${slug}\n        transport: stdio\n        command: ${JSON.stringify(command)}\n        cwd: !!js process.cwd()\n        failOnStartupError: false\n`
+}
+
 function loadStoredLogs(): McpLogEntry[] {
   try {
     const raw = localStorage.getItem(MCP_LOG_KEY)
@@ -673,13 +733,12 @@ function saveStoredMcps(rows: McpServerRow[]): void {
   }
 }
 
-/** 推荐 MCP Server 页：蓝色标题 + 推荐列表（复用于行样式，右侧换成「添加」）。 */
-function McpRecommendView({ t, recommended, servers, onAdd, onRemove }: {
+/** 推荐 MCP Server 页：蓝色标题 + 推荐列表（「添加」= 复制配置片段，不写本地）。 */
+function McpRecommendView({ t, recommended, live, onAdd }: {
   t: (key: string) => string
   recommended: McpServerRow[]
-  servers: McpServerRow[]
+  live: LiveMcpStatus
   onAdd: (row: McpServerRow) => void
-  onRemove: (id: string) => void
 }): JSX.Element {
   const [recCat, setRecCat] = useState<'all' | 'official' | 'community'>('all')
   const [openRecMenu, setOpenRecMenu] = useState<string | null>(null)
@@ -689,6 +748,23 @@ function McpRecommendView({ t, recommended, servers, onAdd, onRemove }: {
   /** 一键添加：解析 README 中的解析中/失败标记。 */
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [resolveErr, setResolveErr] = useState<string | null>(null)
+  /** 已复制配置片段的行 id（短暂展示「已复制 ✓」）。 */
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  /** 复制 cordis.patch.yml 配置片段（不写任何存储；真实添加需粘贴到配置文件）。 */
+  const copyRow = (row: McpServerRow): void => {
+    const snippet = mcpConfigureSnippet(
+      row.name,
+      row.url !== undefined
+        ? (row.url.toLowerCase().includes('/sse') ? 'sse' : 'http')
+        : row.type === 'stdio' ? 'stdio' : 'http',
+      row.command ?? '',
+      row.url ?? '',
+    )
+    void navigator.clipboard.writeText(snippet).then(() => {
+      setCopiedId(row.id)
+      window.setTimeout(() => { setCopiedId((current) => (current === row.id ? null : current)) }, 1600)
+    }, () => { /* 剪贴板不可用时静默 */ })
+  }
   /** 外部搜索结果 → 可添加行（id 保持与卡片一致）。 */
   const externalToRow = (item: { id: string; name: string; description: string; url?: string; source: 'github' | 'registry' }): McpServerRow => ({
     id: item.id,
@@ -712,7 +788,7 @@ function McpRecommendView({ t, recommended, servers, onAdd, onRemove }: {
         setResolveErr(item.id)
         return
       }
-      onAdd({
+      copyRow({
         ...externalToRow(item),
         type: body.type,
         ...(body.type === 'stdio' ? { command: body.command ?? '' } : { url: body.url ?? item.url }),
@@ -723,7 +799,9 @@ function McpRecommendView({ t, recommended, servers, onAdd, onRemove }: {
       setResolvingId(null)
     }
   }
-  const addedIds = new Set(servers.map((row) => row.id))
+  const liveNames = live.state === 'ready' ? live.data.servers.map((server) => server.serverName) : []
+  const addedIds = new Set(liveNames)
+  const alreadyLive = (id: string): boolean => liveNames.some((name) => name === id || name.includes(id) || id.includes(name))
   const cats: Array<['all' | 'official' | 'community', string]> = [
     ['all', t('filterAll')], ['official', t('mcpTagOfficial')], ['community', t('mcpTagCommunity')],
   ]
@@ -815,27 +893,27 @@ function McpRecommendView({ t, recommended, servers, onAdd, onRemove }: {
                     {item.source === 'registry' && item.url !== undefined
                       ? (
                         alreadyAdded
-                          ? <span className={css.mcpAddedTag}>{t('mcpAdded')}</span>
+                          ? <span className={css.mcpAddedTag}>{t('mcpLiveRegistered')}</span>
                           : (
                             <button type="button" className={css.mcpAddSmallBtn} disabled={resolving}
                               onClick={() => {
-                                onAdd({
+                                copyRow({
                                   ...externalToRow(item),
                                   type: item.url?.toLowerCase().includes('/sse') ? 'sse' : 'http',
                                   url: item.url,
                                 })
                               }}>
-                              <IconPlusOutline16 size={13} aria-hidden="true" />&nbsp;{t('mcpAdd')}
+                              <IconPlusOutline16 size={13} aria-hidden="true" />&nbsp;{copiedId === item.id ? t('mcpCopyDone') : t('mcpAdd')}
                             </button>
                           )
                       )
                       : alreadyAdded
-                        ? <span className={css.mcpAddedTag}>{t('mcpAdded')}</span>
+                        ? <span className={css.mcpAddedTag}>{t('mcpLiveRegistered')}</span>
                         : (
                           <div className={css.mcpExtActions}>
                             <button type="button" className={css.mcpAddSmallBtn} disabled={resolving}
                               onClick={() => { void resolveAndAdd(item) }}>
-                              {resolving ? t('mcpResolving') : t('mcpAdd')}
+                              {resolving ? t('mcpResolving') : copiedId === item.id ? t('mcpCopyDone') : t('mcpAdd')}
                             </button>
                             {typeof item.url === 'string' && (
                               <a className={css.mcpOpenLink} href={item.url} target="_blank" rel="noreferrer">
@@ -876,36 +954,10 @@ function McpRecommendView({ t, recommended, servers, onAdd, onRemove }: {
               <div className={css.mcpRecCardFoot}>
                 <span className={css.mcpRecCardMeta}>{row.category} · {t(row.tag === 'official' ? 'mcpTagOfficial' : 'mcpTagCommunity')}</span>
                 {added ? (
-                  <>
-                    <button type="button" className={css.mcpAddedTag} onClick={() => { onRemove(row.id) }} title={t('mcpRemove')}>
-                      ✓ {t('mcpAdded')}
-                    </button>
-                    <Menu
-                      open={openRecMenu === `rec:${row.id}`}
-                      onClose={() => { setOpenRecMenu(null) }}
-                      onSelect={(id) => {
-                        setOpenRecMenu(null)
-                        if (id === 'delete') onRemove(row.id)
-                      }}
-                      portal
-                      items={[{ id: 'delete', label: t('delete'), icon: <IconTrashOutline16 size={14} />, danger: true }]}
-                      anchor={(
-                        <button
-                          type="button"
-                          className={css.bundleMoreBtn}
-                          aria-label={t('moreActions')}
-                          aria-haspopup="menu"
-                          aria-expanded={openRecMenu === `rec:${row.id}` || undefined}
-                          onClick={() => { setOpenRecMenu(openRecMenu === `rec:${row.id}` ? null : `rec:${row.id}`) }}
-                        >
-                          <IconEllipsisOutline16 size={15} aria-hidden="true" />
-                        </button>
-                      )}
-                    />
-                  </>
+                  <span className={css.mcpAddedTag}>{t('mcpLiveRegistered')}</span>
                 ) : (
-                  <button type="button" className={css.mcpAddSmallBtn} onClick={() => { onAdd(row) }}>
-                    <IconPlusOutline16 size={13} aria-hidden="true" />&nbsp;{t('mcpAdd')}
+                  <button type="button" className={css.mcpAddSmallBtn} onClick={() => { copyRow(row) }}>
+                    <IconPlusOutline16 size={13} aria-hidden="true" />&nbsp;{copiedId === row.id ? t('mcpCopyDone') : t('mcpAdd')}
                   </button>
                 )}
               </div>
@@ -981,35 +1033,26 @@ function McpBellIcon({ size = 17 }: { size?: number }): JSX.Element {
   )
 }
 
-/** 自定义添加 MCP Server 表单弹窗。 */
-function McpAddModal({ t, open, onClose, onSubmit }: {
+/** 自定义添加 MCP Server 表单弹窗：提交生成 cordis.patch.yml 配置片段并复制。 */
+function McpAddModal({ t, open, onClose }: {
   t: (key: string) => string
   open: boolean
   onClose: () => void
-  onSubmit: (row: Omit<McpServerRow, 'id' | 'source'>) => void
 }): JSX.Element {
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [type, setType] = useState<'stdio' | 'http' | 'sse'>('stdio')
   const [command, setCommand] = useState('')
   const [url, setUrl] = useState('')
+  const [copied, setCopied] = useState(false)
   const trimmed = name.trim()
   const valid = trimmed !== '' && (type === 'stdio' ? command.trim() !== '' : url.trim() !== '')
   const submit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
     if (!valid) return
-    onSubmit({
-      name: trimmed,
-      description: desc.trim(),
-      tag: 'community',
-      category: t('mcpAddCat'),
-      enabled: true,
-      autostart: true,
-      type,
-      ...(type === 'stdio' ? { command: command.trim() } : { url: url.trim() }),
-    })
-    setName(''); setDesc(''); setType('stdio'); setCommand(''); setUrl('')
-    onClose()
+    const snippet = mcpConfigureSnippet(trimmed, type, command.trim(), url.trim())
+    void navigator.clipboard.writeText(snippet).then(() => { setCopied(true) }, () => { /* 剪贴板不可用时保持表单 */ })
+    setDesc('')
   }
   return (
     <Modal open={open} onClose={onClose} closeLabel={t('close')} title={t('mcpAddModalTitle')}>
@@ -1051,6 +1094,7 @@ function McpAddModal({ t, open, onClose, onSubmit }: {
           <Button variant="primary" type="submit" disabled={!valid}>{t('mcpAddConfirm')}</Button>
           <Button variant="outline" type="button" onClick={onClose}>{t('cancel')}</Button>
         </div>
+        {copied && <p className={css.mcpCopyHint} role="status">{t('mcpCopyHint')}</p>}
       </form>
     </Modal>
   )
@@ -1088,19 +1132,17 @@ const MCP_TOOL_DESCS: Record<string, string> = {
   list_users: '列出工作区用户',
 }
 
-/** 工具列表页：从已启用 Server 派生工具。 */
-function McpToolsView({ t, servers }: { t: (key: string) => string; servers: McpServerRow[] }): JSX.Element {
+/** 工具列表页：真实注册的 mcp__ 工具（来自 /api/triad/mcp-status）。 */
+function McpToolsView({ t, live }: { t: (key: string) => string; live: LiveMcpStatus }): JSX.Element {
   const [q, setQ] = useState('')
-  const enabled = servers.filter((row) => row.enabled)
   const tools: Array<{ name: string; server: string; desc: string }> = []
-  for (const server of enabled) {
-    const names = Object.keys(MCP_TOOL_PRESETS).find((key) => server.id.includes(key))
-      ? MCP_TOOL_PRESETS[Object.keys(MCP_TOOL_PRESETS).find((key) => server.id.includes(key)) as string]
-      : ['mcp_call_tool']
-    for (const name of names) tools.push({ name, server: server.name, desc: MCP_TOOL_DESCS[name] ?? '通过 MCP Server 提供的能力' })
+  if (live.state === 'ready') {
+    for (const server of live.data.servers) {
+      for (const tool of server.tools) tools.push({ name: tool.name, server: server.serverName, desc: tool.description })
+    }
   }
   const ql = q.trim().toLowerCase()
-  const filtered = tools.filter((item) => ql === '' || item.name.toLowerCase().includes(ql) || item.server.toLowerCase().includes(ql))
+  const filtered = tools.filter((item) => ql === '' || item.name.toLowerCase().includes(ql) || item.server.toLowerCase().includes(ql) || item.desc.toLowerCase().includes(ql))
   return (
     <div className={css.mcpServerMain}>
       <div className={css.mcpRecHead}>
@@ -1111,8 +1153,10 @@ function McpToolsView({ t, servers }: { t: (key: string) => string; servers: Mcp
             aria-label={t('mcpToolsSearch')} onChange={(event) => { setQ(event.currentTarget.value) }} />
         </div>
       </div>
-      {filtered.length === 0 ? (
-        <p className={css.mcpEmptyList}>{enabled.length === 0 ? t('mcpToolsEmpty') : t('noMatch')}</p>
+      {live.state === 'unavailable' ? (
+        <p className={css.mcpEmptyList}>{t('mcpLiveUnavailable')}</p>
+      ) : filtered.length === 0 ? (
+        <p className={css.mcpEmptyList}>{tools.length === 0 ? t('mcpLiveEmpty') : t('noMatch')}</p>
       ) : (
         <section className={css.mcpListCard}>
           <ul className={css.mcpList}>
@@ -1154,7 +1198,7 @@ function McpLogsView({ t, logs, onClear }: { t: (key: string) => string; logs: M
         )}
       </div>
       {logs.length === 0 ? (
-        <p className={css.mcpEmptyList}>{t('mcpLogEmpty')}</p>
+        <p className={css.mcpEmptyList}>{logs.length === 0 ? t('mcpLogNewNote') : t('mcpLogEmpty')}</p>
       ) : (
         <section className={css.mcpListCard}>
           <ul className={css.mcpList}>
@@ -1228,22 +1272,44 @@ function McpConfigView({ t }: { t: (key: string) => string }): JSX.Element {
 }
 
 /** 推荐 Skill 视图：官方 skills 目录卡片 + 一键安装。 */
-/** MCP Server 页（图一头部 + 统计卡 / 图二列表卡；解释内容改为右侧悬浮层）。 */
-function McpServerView({ t, servers, onToggle, onToggleAutostart, onRemove, onAddCustom, onOpenInfo }: {
+/** MCP Server 页（图一头部 + 统计卡 / 图二真实注册列表；解释内容改为右侧悬浮层）。 */
+function McpServerView({ t, live, onAddCustom, onOpenInfo, onRefresh }: {
   t: (key: string) => string
-  servers: McpServerRow[]
-  onToggle: (id: string) => void
-  onToggleAutostart: (id: string) => void
-  onRemove: (id: string) => void
+  live: LiveMcpStatus
   onAddCustom: () => void
   onOpenInfo: () => void
+  onRefresh: () => void
 }): JSX.Element {
-  const [openMcpMenu, setOpenMcpMenu] = useState<string | null>(null)
-  const stats: Array<{ tone: 'blue' | 'green' | 'violet' | 'orange'; icon: JSX.Element; title: string; value: number; desc: string }> = [
-    { tone: 'blue', icon: <StatCubeIcon size={20} />, title: t('mcpStatTotal'), value: servers.length, desc: t('mcpStatTotalDesc') },
-    { tone: 'green', icon: <StatCheckCircleIcon size={20} />, title: t('mcpStatEnabled'), value: servers.filter((row) => row.enabled).length, desc: t('mcpStatEnabledDesc') },
-    { tone: 'violet', icon: <StatSquareIcon size={20} />, title: t('mcpStatTools'), value: servers.filter((row) => row.enabled).length * 14, desc: t('mcpStatToolsDesc') },
-    { tone: 'orange', icon: <StatHeartIcon size={20} />, title: t('mcpStatRunning'), value: servers.filter((row) => row.enabled).length, desc: t('mcpStatRunningDesc') },
+  const ready = live.state === 'ready' ? live.data : null
+  const serverCount = ready?.serverCount ?? 0
+  const toolCount = ready?.toolCount ?? 0
+  /** 切换中（防连点）/ 切换失败的 serverName。 */
+  const [toggling, setToggling] = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
+  const toggleServer = (server: LiveMcpServer): void => {
+    if (toggling !== null || !server.config.editable) return
+    setToggling(server.serverName)
+    setToggleError(null)
+    void fetch('/api/triad/mcp-config', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ serverName: server.serverName, disabled: !server.config.disabled }),
+    })
+      .then((response) => response.json().catch(() => null))
+      .then((body) => {
+        if (typeof body !== 'object' || body === null || (body as { ok?: boolean }).ok !== true) {
+          setToggleError(server.serverName)
+          return
+        }
+        onRefresh()
+      })
+      .catch(() => { setToggleError(server.serverName) })
+      .finally(() => { setToggling(null) })
+  }
+  const stats: Array<{ tone: 'blue' | 'green' | 'violet'; icon: JSX.Element; title: string; value: number; desc: string }> = [
+    { tone: 'blue', icon: <StatCubeIcon size={20} />, title: t('mcpStatTotal'), value: serverCount, desc: t('mcpStatTotalDesc') },
+    { tone: 'green', icon: <StatCheckCircleIcon size={20} />, title: t('mcpLiveRegisteredTitle'), value: serverCount, desc: t('mcpLiveRegistered') },
+    { tone: 'violet', icon: <StatSquareIcon size={20} />, title: t('mcpStatTools'), value: toolCount, desc: t('mcpStatToolsDesc') },
   ]
   return (
     <div className={css.mcpServerMain}>
@@ -1257,8 +1323,8 @@ function McpServerView({ t, servers, onToggle, onToggleAutostart, onRemove, onAd
               <span className={css.mcpHeaderSub}>{t('mcpSubtitle')}</span>
             </div>
             <div className={css.mcpHeaderActions}>
-              <button type="button" className={css.mcpMarketBtn}>
-                {t('mcpMarketplace')}
+              <button type="button" className={css.mcpMarketBtn} onClick={onRefresh} title={t('mcpLiveRefresh')}>
+                {t('mcpLiveRefresh')}
               </button>
               <button type="button" className={css.mcpAddBtn} onClick={onAddCustom}>
                 <IconPlusOutline16 size={14} aria-hidden="true" />&nbsp;{t('mcpAddServer')}
@@ -1268,6 +1334,9 @@ function McpServerView({ t, servers, onToggle, onToggleAutostart, onRemove, onAd
               </button>
             </div>
           </header>
+
+          {/* 真实状态说明条 */}
+          <p className={css.mcpEmptyList}>{t('mcpLiveNote')}</p>
 
           {/* 图一：统计卡（复用技能统计卡样式） */}
           <div className={css.statsRow} data-mcp="true">
@@ -1288,75 +1357,61 @@ function McpServerView({ t, servers, onToggle, onToggleAutostart, onRemove, onAd
             ))}
           </div>
 
-          {/* 图二：MCP Server 列表（卡片网格） */}
+          {/* 图二：MCP Server 列表（真实注册卡片网格） */}
           <section className={css.mcpListCard}>
             <div className={css.mcpListHead}>
               <span className={css.mcpListTitle}>{t('mcpListTitle')}</span>
-              <span className={css.mcpListCount}>{servers.length}</span>
+              <span className={css.mcpListCount}>{serverCount}</span>
             </div>
-            {servers.length === 0 ? (
-              <p className={css.mcpEmptyList}>{t('mcpEmptyList')}</p>
+            {live.state === 'unavailable' ? (
+              <p className={css.mcpEmptyList}>{t('mcpLiveUnavailable')}</p>
+            ) : serverCount === 0 ? (
+              <p className={css.mcpEmptyList}>{t('mcpLiveEmpty')}</p>
             ) : (
               <div className={css.mcpRecGrid}>
-                {servers.map((row) => (
-                  <section key={row.id} className={css.mcpRecCard}>
+                {ready?.servers.map((server) => (
+                  <section key={server.serverName} className={css.mcpRecCard}>
                     <div className={css.mcpRecCardHead}>
-                      <span className={css.mcpRowLogo} data-kind={row.id}><McpLogoIcon kind={row.id.includes('search') ? 'globe' : row.id === 'github' ? 'github' : row.id === 'slack' ? 'slack' : 'db'} /></span>
+                      <span className={css.mcpRowLogo} data-kind="live"><McpLogoIcon kind="github" /></span>
                       <span className={css.mcpRecCardTitleRow}>
-                        <span className={css.mcpRecCardName}>{row.name}</span>
+                        <span className={css.mcpRecCardName}>{server.serverName}</span>
                         <span className={css.mcpRecCardTags}>
-                          <span className={css.mcpRowTag} data-official={row.tag === 'official' || undefined}>{t(row.tag === 'official' ? 'mcpTagOfficial' : 'mcpTagCommunity')}</span>
-                          <span className={css.mcpRecCatTag}>{row.category}</span>
+                          <span className={css.mcpRecCatTag}>{server.config.disabled ? t('mcpLiveDisabled') : t('mcpLiveRegistered')}</span>
+                          <span className={css.mcpRecCatTag}>{server.toolCount} {t('mcpLiveToolsOf')}</span>
                         </span>
                       </span>
-                      {/* 右上角：启用开关 */}
-                      <Tooltip label={t('enableSkill')} side="bottom" delayMs={500}>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={row.enabled}
-                          aria-label={t('enableSkill')}
-                          title={row.enabled ? t('mcpStatusEnabled') : t('mcpStatusDisabled')}
-                          className={`${css.toggle} ${row.enabled ? css.toggleOn : css.toggleOff}`}
-                          onClick={() => { onToggle(row.id) }}
-                        >
-                          <span className={css.toggleKnob} aria-hidden="true" />
-                        </button>
-                      </Tooltip>
+                      {server.config.editable ? (
+                        <Tooltip label={server.config.disabled ? t('enableSkill') : t('mcpLiveDisabled')} side="bottom" delayMs={500}>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={!server.config.disabled}
+                            aria-label={server.config.disabled ? t('enableSkill') : t('mcpLiveDisabled')}
+                            title={server.config.disabled ? t('enableSkill') : t('mcpLiveDisabled')}
+                            className={`${css.toggle} ${server.config.disabled ? css.toggleOff : css.toggleOn}`}
+                            disabled={toggling === server.serverName}
+                            onClick={() => { toggleServer(server) }}
+                          >
+                            <span className={css.toggleKnob} aria-hidden="true" />
+                          </button>
+                        </Tooltip>
+                      ) : null}
                     </div>
-                    {row.description !== '' && (
-                      <p className={css.mcpRecCardDesc}>{row.description}</p>
+                    {server.config.disabled ? (
+                      <p className={css.mcpRecCardDesc}>{t('mcpLiveDisabled')} · 工具不可用</p>
+                    ) : (
+                      <p className={css.mcpRecCardDesc}>
+                        {server.tools.slice(0, 6).map((tool) => tool.name.replace(/^mcp__[^_]+__/, '')).join(' · ')}
+                        {server.toolCount > 6 ? ` · +${server.toolCount - 6}` : ''}
+                      </p>
                     )}
                     <div className={css.mcpCardFoot}>
                       <span className={css.mcpCardItem}>
-                        <span className={css.mcpCardItemLabel}>{t('mcpAutostart')}</span>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={row.autostart}
-                          aria-label={t('mcpAutostart')}
-                          title={t('mcpAutostartTitle')}
-                          className={`${css.toggle} ${row.autostart ? css.toggleOn : css.toggleOff}`}
-                          onClick={() => { onToggleAutostart(row.id) }}
-                        >
-                          <span className={css.toggleKnob} aria-hidden="true" />
-                        </button>
+                        <span className={css.mcpCardItemLabel}>{toggleError === server.serverName ? t('mcpLiveToggleFailed') : t('mcpLiveConfigHint')}</span>
                       </span>
-                      {/* 右下角：删除（常显） */}
-                      <Tooltip label={t('delete')} side="bottom" delayMs={500}>
-                        <button
-                          type="button"
-                          className={`${css.iconAction} ${css.mcpCardDelete}`}
-                          aria-label={t('delete')}
-                          title={t('delete')}
-                          onClick={() => { onRemove(row.id) }}
-                        >
-                          <IconTrashOutline16 size={14} aria-hidden="true" />
-                        </button>
-                      </Tooltip>
                     </div>
                   </section>
-                ))}
+                )) ?? null}
               </div>
             )}
           </section>
@@ -1666,6 +1721,7 @@ const css = {
   mcpListCount: 'skm-mcp-list-count',
   mcpList: 'skm-mcp-list',
   mcpEmptyList: 'skm-mcp-empty-list',
+  mcpCopyHint: 'skm-mcp-copy-hint',
   mcpIntroCard: 'skm-mcp-intro-card',
   mcpIntroBody: 'skm-mcp-intro-body',
   mcpIntroTitle: 'skm-mcp-intro-title',
@@ -2134,6 +2190,7 @@ const SHEET = `
 .skm-mcp-bell-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer;transition:background 140ms ease,color 140ms ease,transform 140ms ease}
 .skm-mcp-bell-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,#1f2430)}
 .skm-mcp-bell-btn:active{transform:scale(.94)}
+.skm-mcp-copy-hint{flex:none;margin:0;padding:8px 12px;border-radius:10px;background:color-mix(in srgb,var(--dsw-alias-state-success-primary,#2fb344) 10%,transparent);color:var(--dsw-alias-state-success-primary,#2fb344);font-size:12px;line-height:17px}
 /* 统计卡（复用技能统计卡样式，去掉列表页内边距） */
 .skm-stats-row[data-mcp]{padding:0}
 /* 图二：列表卡 */
@@ -3133,13 +3190,15 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   /** 左侧顶层 tab：SKILL（技能管理）/ MCP（MCP Server）。 */
   const [kind, setKind] = useState<'skill' | 'mcp'>('skill')
   /** MCP 视图一级导航。 */
-  const [mcpTab, setMcpTab] = useState<'server' | 'recommend' | 'tools' | 'log' | 'config'>('server')
+  const [mcpTab, setMcpTab] = useState<'server' | 'tools' | 'log' | 'config'>('server')
   /** MCP 解释浮层开关（什么是 MCP / 工作原理 / 快速上手）。 */
   const [mcpInfoOpen, setMcpInfoOpen] = useState(false)
   /** 已添加的 MCP Server（localStorage 持久化）。 */
   const [mcpServers, setMcpServers] = useState<McpServerRow[]>(() => loadStoredMcps())
   /** 推荐 MCP Server：面板打开时从 /api/mcp-recommended 拉取（失败回退内置清单）。 */
   const [mcpRecommended, setMcpRecommended] = useState<McpServerRow[]>(FALLBACK_RECOMMENDED)
+  /** 真实 MCP 注册状态（/api/triad/mcp-status）：MCP 页统计与列表的真实数据源。 */
+  const [mcpLive, mcpRefreshLive] = useMcpLiveState()
   useEffect(() => {
     let current = true
     void fetch('/api/mcp-recommended', { headers: { accept: 'application/json' } })
@@ -3882,12 +3941,11 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
               servers={mcpServers}
               recommended={mcpRecommended}
               onAdd={addRecommendMcp}
-              onToggle={toggleMcp}
-              onToggleAutostart={toggleMcpAutostart}
-              onRemove={removeMcp}
+              live={mcpLive}
               onAddCustom={() => { setMcpAddOpen(true) }}
               logs={mcpLogs}
               onClearLogs={() => { setMcpLogs([]); saveStoredLogs([]) }}
+              onRefresh={() => { mcpRefreshLive() }}
             />
           ) : (<>          {/* 统计行 */}
           <div className={css.statsRow}>
@@ -4305,7 +4363,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
         t={t}
         open={mcpAddOpen}
         onClose={() => { setMcpAddOpen(false) }}
-        onSubmit={addCustomMcp}
       />
 
       <Modal

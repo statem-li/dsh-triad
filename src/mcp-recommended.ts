@@ -429,14 +429,14 @@ function hostNameOf(value: string | undefined): string | null {
   return firstColon === -1 ? host : host.slice(0, firstColon)
 }
 
-function loopbackAllowed(req: { socket: { remoteAddress?: string }; headers: { host?: string } }): boolean {
+export function loopbackAllowed(req: { socket: { remoteAddress?: string }; headers: { host?: string } }): boolean {
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false
   const host = hostNameOf(req.headers.host)
   if (host === null) return false
   return host === 'localhost' || host === '127.0.0.1' || host === '::1'
 }
 
-function json(res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (body: string) => void }, status: number, value: unknown): void {
+export function writeJsonResponse(res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (body: string) => void }, status: number, value: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-cache',
@@ -452,29 +452,29 @@ export function applyMcpRecommended(ctx: Context): void {
     handler: (req: { socket: { remoteAddress?: string }; headers: { host?: string } }, res: { writeHead: (status: number, headers: Record<string, string>) => void; end: (body: string) => void }) => {
       void (async () => {
         if (!loopbackAllowed(req)) {
-          json(res, 403, { error: 'loopback-only' })
+          writeJsonResponse(res, 403, { error: 'loopback-only' })
           return
         }
         const url = new URL(req.url ?? '/', 'http://localhost')
         if (url.pathname === ROUTE_PATH || url.pathname === `${ROUTE_PATH}/`) {
-          json(res, 200, await getRecommended())
+          writeJsonResponse(res, 200, await getRecommended())
           return
         }
         if (url.pathname === SEARCH_ROUTE || url.pathname === `${SEARCH_ROUTE}/`) {
           const q = url.searchParams.get('q') ?? ''
-          json(res, 200, { query: q, servers: await searchServers(q) })
+          writeJsonResponse(res, 200, { query: q, servers: await searchServers(q) })
           return
         }
         if (url.pathname === RESOLVE_ROUTE || url.pathname === `${RESOLVE_ROUTE}/`) {
           const repo = url.searchParams.get('repo') ?? ''
           if (!/^https?:\/\//.test(repo)) {
-            json(res, 400, { ok: false, error: 'repo required' })
+            writeJsonResponse(res, 400, { ok: false, error: 'repo required' })
             return
           }
-          json(res, 200, await resolveServer(repo))
+          writeJsonResponse(res, 200, await resolveServer(repo))
           return
         }
-        json(res, 404, { error: `no route for ${req.method ?? 'GET'} ${url.pathname}` })
+        writeJsonResponse(res, 404, { error: `no route for ${req.method ?? 'GET'} ${url.pathname}` })
       })()
     },
   }), 'dsh-mcp-recommended: routes')

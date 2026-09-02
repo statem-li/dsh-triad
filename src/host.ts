@@ -23,6 +23,7 @@ import { apply as applyUsageHost } from '../vendor/usage-skill/index.js'
 import { apply as applySkillToggles } from './skill-toggles.js'
 import { applySkillHealth } from './skill-health.js'
 import { applyMcpRecommended } from './mcp-recommended.js'
+import { applyMcpStatus } from './mcp-status.js'
 import type { MemoryConfig } from './memory/types.js'
 
 /** Stable Cordis plugin name. */
@@ -106,6 +107,18 @@ export async function apply(ctx: Context, config: TriadConfig = {}): Promise<voi
   } catch (error) {
     ctx.logger?.warn?.(
       `[dsh-triad] mcp recommended failed to mount: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    )
+  }
+
+  // ── 真实 MCP Server 状态（桥接注册的工具 + 分组）───────────────
+  // GET /api/triad/mcp-status：只读 ctx.tools 中 mcp__* 工具，供
+  // 「能力管理」面板 MCP 页显示真实注册状态（替代 localStorage 假数据）。
+  try {
+    applyMcpStatus(ctx)
+    ctx.logger?.info?.('[dsh-triad] mcp status mounted')
+  } catch (error) {
+    ctx.logger?.warn?.(
+      `[dsh-triad] mcp status failed to mount: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     )
   }
 
