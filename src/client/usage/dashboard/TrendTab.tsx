@@ -369,7 +369,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
   const hitTone: 'up' | 'down' | 'flat' = hitDelta === null ? 'flat' : hitDelta > 0 ? 'up' : hitDelta < 0 ? 'down' : 'flat'
 
   return (
-    <>
+    <div style={{ maxWidth: 1200, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* ── KPI 统计行：方块图标 + 大数 + 较昨日/较上期 chip ── */}
       <div className={css.statsRow}>
         <HubStat
@@ -437,13 +437,13 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
       <div className={`${css.mainScroll} ${modalStaggerClass}`}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: compact ? '1fr' : 'minmax(0, 2.2fr) minmax(300px, 1fr)',
-          gap: 12,
+          gridTemplateColumns: compact ? '1fr' : 'minmax(0, 2.2fr) minmax(280px, 1fr)',
+          gap: 10,
           alignItems: 'start',
           minWidth: 0,
         }}>
           {/* ── 左列：趋势卡 + 概览 ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
             <HubSection
               title="用量趋势"
               action={(
@@ -465,7 +465,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
                   </div>
                   {/* 单位下拉：Tokens 自动 / 万 / 亿 */}
                   <div className={css.dropWrap}>
-                    <button type="button" className={css.toolButton} style={{ height: 28, padding: '0 9px', fontSize: 12, gap: 5 }} onClick={() => setUnitOpen(v => !v)}>
+                    <button type="button" className={css.toolButton} style={{ height: 24, padding: '0 8px', fontSize: 11, gap: 5 }} onClick={() => setUnitOpen(v => !v)}>
                       {unit === 'auto' ? 'Tokens' : unit === 'wan' ? '万' : '亿'}
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="m6 9 6 6 6-6" />
@@ -488,7 +488,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
                 </div>
               )}
             >
-              <div style={{ ...panel(16, 12), minHeight: 280 }}>
+              <div style={{ ...panel(14, 10), minHeight: 250 }}>
                 <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   {showTrend
                     ? (
@@ -499,7 +499,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
                         format={fmt}
                         anomalies={anomalyMap ?? undefined}
                         onSelectAnomaly={anomalyMap !== null && onJumpSignal !== undefined ? () => onJumpSignal() : undefined}
-                        height={compact ? 220 : 280}
+                        height={compact ? 200 : 250}
                       />
                     )
                     : emptyHint('暂无可绘制的趋势数据')}
@@ -550,7 +550,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           </div>
 
           {/* ── 右列：命中率 + 供应商 Top5 + 告警 ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
             <HubSection
               title="缓存命中率"
               meta={(
@@ -559,17 +559,17 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
                 </span>
               )}
             >
-              <div style={{ ...panel(16, 12), alignItems: 'center' }}>
-                <Gauge percent={filtered.length > 0 ? hitRate : null} label="命中率" size={compact ? 160 : 190} />
-                <div style={{ alignSelf: 'stretch', display: 'flex', borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 10 }}>
+              <div style={{ ...panel(14, 8), alignItems: 'center' }}>
+                <Gauge percent={filtered.length > 0 ? hitRate : null} label="命中率" size={compact ? 140 : 168} />
+                <div style={{ alignSelf: 'stretch', display: 'flex', borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 8 }}>
                   <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                    <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }}>命中 Tokens</span>
-                    <span style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, fontFamily: MONO, color: 'var(--dsw-alias-label-primary)' }}>{formatUnits(sum.cache)}</span>
+                    <span style={{ fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' }}>命中 Tokens</span>
+                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, fontFamily: MONO, color: 'var(--dsw-alias-label-primary)' }}>{formatUnits(sum.cache)}</span>
                   </div>
                   <div style={{ width: 1, background: 'var(--dsw-alias-border-l2)', margin: '4px 0' }} />
                   <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                    <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }}>缓存读取 Tokens</span>
-                    <span style={{ fontSize: 15, lineHeight: '22px', fontWeight: 600, fontFamily: MONO, color: 'var(--dsw-alias-label-primary)' }}>{formatUnits(sum.cache)}</span>
+                    <span style={{ fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)' }}>缓存读取 Tokens</span>
+                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, fontFamily: MONO, color: 'var(--dsw-alias-label-primary)' }}>{formatUnits(sum.cache)}</span>
                   </div>
                 </div>
               </div>
@@ -580,7 +580,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
               meta="Top 5"
               action={share.length > 0 ? <LinkButton onClick={onJumpAccounts}>查看全部</LinkButton> : undefined}
             >
-              <div style={{ ...panel(14, 4) }}>
+              <div style={{ ...panel(12, 2) }}>
                 {share.length === 0 ? (
                   <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>{rangeLabel}暂无用量</div>
                 ) : share.slice(0, 5).map((s, i) => {
@@ -607,7 +607,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
             </HubSection>
 
             <HubSection title="供应商告警" meta={alerts.length > 0 ? `${alerts.length} 条` : '全部正常'}>
-              <div style={{ ...panel(14, 8), flex: '1 1 auto', minHeight: 0 }}>
+              <div style={{ ...panel(12, 8), flex: '1 1 auto', minHeight: 0 }}>
                 <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {alerts.length === 0 ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }}>
@@ -643,11 +643,11 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           meta={`${rangeLabel} · Top ${Math.min(10, rank.length)}`}
           action={rank.length > 0 && onJumpDetail !== undefined ? <LinkButton onClick={onJumpDetail}>查看更多</LinkButton> : undefined}
         >
-          <div style={{ ...panel(16, 12) }}>
-            {rank.length === 0 ? emptyHint(`${rangeLabel}暂无用量`) : <RankBars rows={rank} nameWidth={compact ? 150 : 240} ranked />}
+          <div style={{ ...panel(14, 10) }}>
+            {rank.length === 0 ? emptyHint(`${rangeLabel}暂无用量`) : <RankBars rows={rank} nameWidth={compact ? 140 : 200} ranked />}
           </div>
         </HubSection>
       </div>
-    </>
+    </div>
   )
 }

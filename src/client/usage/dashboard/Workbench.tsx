@@ -29,12 +29,12 @@ const NAV: Array<{ key: TabKey; label: string; icon: (size?: number, stroke?: nu
   { key: 'accounts', label: '余额/配额', icon: walletIcon },
 ]
 
-/** 每个 tab 的理想卡片尺寸（左栏 216px 后，宽度整体加大约 250px）。 */
+/** 每个 tab 的理想卡片尺寸（用户反馈卡片过大：趋势页收成固定尺寸弹层，内容限宽居中）。 */
 const TAB_SIZES: Record<TabKey, PopoverSize> = {
-  trend: { width: 1860, height: 1260, fill: true },
-  detail: { width: 1760, height: 1180 },
-  signal: { width: 1820, height: 1220 },
-  accounts: { width: 1520, height: 1000 },
+  trend: { width: 1240, height: 880 },
+  detail: { width: 1240, height: 860 },
+  signal: { width: 1240, height: 860 },
+  accounts: { width: 1180, height: 820 },
 }
 
 export interface WorkbenchProps {
