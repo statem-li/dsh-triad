@@ -140,8 +140,17 @@ export function BarChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseline, chartMax, W, H])
 
-  // X 轴标签密度：约每 70px 一个，保证首尾标签。
-  const labelStep = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor((W - PAD.l - PAD.r) / 70))))
+  // X 轴标签：按最小间距 56px 选点（标签含 5~6 字符宽约 40px，留 16px 空档），
+  // 末柱仅当前一标签距其 ≥ 半间距时追加，避免「09-01 / 09-02」在右端重叠。
+  const plotW = W - PAD.l - PAD.r
+  const labelStep = Math.max(1, Math.ceil((data.length * 56) / plotW))
+  const labelIdxs: number[] = []
+  for (let i = 0; i < data.length; i += labelStep) labelIdxs.push(i)
+  const lastIdx = data.length - 1
+  if (labelIdxs[labelIdxs.length - 1] !== lastIdx && lastIdx >= 0) {
+    const prevCenter = cx(labelIdxs[labelIdxs.length - 1] ?? 0)
+    if (cx(lastIdx) - prevCenter >= 40) labelIdxs.push(lastIdx)
+  }
 
   if (data.length === 0) {
     return <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dsw-alias-label-tertiary)', fontSize: 13 }}>暂无数据</div>
@@ -268,11 +277,11 @@ export function BarChart({
           </g>
         )}
 
-        {/* X 轴标签 */}
-        {data.map((d, i) => (i % labelStep === 0 || i === data.length - 1) ? (
-          <text key={d.label} x={cx(i)} y={H - 8} fontSize={10.5} fill="var(--dsw-alias-label-tertiary)"
-            textAnchor={i === 0 ? 'start' : i === data.length - 1 ? 'end' : 'middle'}>{axisLabel(d.label)}</text>
-        ) : null)}
+        {/* X 轴标签（labelIdxs 由最小间距算法选出，右端不重叠） */}
+        {labelIdxs.map(i => (
+          <text key={data[i]?.label ?? i} x={cx(i)} y={H - 8} fontSize={10.5} fill="var(--dsw-alias-label-tertiary)"
+            textAnchor={i === 0 ? 'start' : i === lastIdx ? 'end' : 'middle'}>{axisLabel(data[i]?.label ?? '')}</text>
+        ))}
 
         {/* 命中区：整块绘图区换算列号 */}
         <rect x={PAD.l} y={PAD.t} width={W - PAD.l - PAD.r} height={H - PAD.t - PAD.b} fill="transparent"

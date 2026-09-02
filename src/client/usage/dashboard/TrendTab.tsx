@@ -139,11 +139,8 @@ function anomalyCountOf(days: UsageDay[]): number {
   return days.filter(d => (d.tokens ?? 0) > median * 3).length
 }
 
-/** 环比 chip：较昨日/较上期 + 箭头 + 百分比（上一周期为 0 时显示 —）。 */
-function DeltaChip({ pct, label }: { pct: number | null; label: string }): JSX.Element {
-  if (pct === null) {
-    return <><span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{label}</span><span style={{ color: 'var(--dsw-alias-label-tertiary)' }}> —</span></>
-  }
+/** 环比 chip：较昨日/较上期 + 箭头 + 百分比（调用侧保证 pct 非 null；上一期无数据时由调用侧整行省略）。 */
+function DeltaChip({ pct, label }: { pct: number; label: string }): JSX.Element {
   if (pct > 0) return <><span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{label}</span> ▲{pct >= 10 ? Math.round(pct) : pct.toFixed(1)}%</>
   if (pct < 0) return <><span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{label}</span> ▼{Math.abs(pct) >= 10 ? Math.round(Math.abs(pct)) : Math.abs(pct).toFixed(1)}%</>
   return <><span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{label}</span> 持平</>
@@ -378,7 +375,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           icon={tokensIcon(20)}
           label="总 Tokens"
           value={yi?.yi ?? formatUnits(sum.total)}
-          sub={<DeltaChip pct={deltaTotal} label={periodLabel} />}
+          sub={deltaTotal !== null ? <DeltaChip pct={deltaTotal} label={periodLabel} /> : undefined}
           subTone={deltaTone(deltaTotal)}
           desc={deltaTotal === null ? `范围合计 ${formatUnits(sum.total)}` : `环比上一周期 ${deltaTotal >= 0 ? '+' : ''}${Math.round(deltaTotal)}%`}
           open={openStat === 'total'}
@@ -391,7 +388,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           icon={inputIcon(20)}
           label="输入"
           value={formatUnits(sum.input)}
-          sub={<DeltaChip pct={deltaInput} label={periodLabel} />}
+          sub={deltaInput !== null ? <DeltaChip pct={deltaInput} label={periodLabel} /> : undefined}
           subTone={deltaTone(deltaInput)}
           desc={`输入精确 ${formatExact(sum.input)}`}
           open={openStat === 'input'}
@@ -404,7 +401,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           icon={outputIcon(20)}
           label="输出"
           value={formatUnits(sum.output)}
-          sub={<DeltaChip pct={deltaOutput} label={periodLabel} />}
+          sub={deltaOutput !== null ? <DeltaChip pct={deltaOutput} label={periodLabel} /> : undefined}
           subTone={deltaTone(deltaOutput)}
           desc={`输出精确 ${formatExact(sum.output)}`}
           open={openStat === 'output'}
@@ -417,7 +414,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           icon={callsIcon(20)}
           label="调用次数"
           value={formatUnits(activity.requests)}
-          sub={<DeltaChip pct={deltaRequests} label={periodLabel} />}
+          sub={deltaRequests !== null ? <DeltaChip pct={deltaRequests} label={periodLabel} /> : undefined}
           subTone={deltaTone(deltaRequests)}
           desc={`累计工作时长 ${formatWorkDuration(activity.workMs)}；活跃 ${filtered.length} 天`}
           open={openStat === 'requests'}
@@ -513,23 +510,29 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
                 <div className={css.ovTile} style={{ animationDelay: '120ms' }}>
                   <span className={css.ovLabel}>日均 Tokens</span>
                   <span className={css.ovValue}>{formatUnits(avg)}</span>
-                  <span style={{ fontSize: 11, lineHeight: '15px', fontFamily: MONO, color: deltaTone(deltaAvg) === 'up' ? 'var(--dsw-alias-state-success-primary)' : deltaTone(deltaAvg) === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
-                    <DeltaChip pct={deltaAvg} label={periodLabel} />
-                  </span>
+                  {deltaAvg !== null && (
+                    <span style={{ fontSize: 11, lineHeight: '15px', fontFamily: MONO, color: deltaTone(deltaAvg) === 'up' ? 'var(--dsw-alias-state-success-primary)' : deltaTone(deltaAvg) === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
+                      <DeltaChip pct={deltaAvg} label={periodLabel} />
+                    </span>
+                  )}
                 </div>
                 <div className={css.ovTile} style={{ animationDelay: '160ms' }}>
                   <span className={css.ovLabel}>工作时长</span>
                   <span className={css.ovValue}>{formatWorkDuration(activity.workMs)}</span>
-                  <span style={{ fontSize: 11, lineHeight: '15px', fontFamily: MONO, color: deltaTone(deltaWork) === 'up' ? 'var(--dsw-alias-state-success-primary)' : deltaTone(deltaWork) === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
-                    <DeltaChip pct={deltaWork} label={periodLabel} />
-                  </span>
+                  {deltaWork !== null && (
+                    <span style={{ fontSize: 11, lineHeight: '15px', fontFamily: MONO, color: deltaTone(deltaWork) === 'up' ? 'var(--dsw-alias-state-success-primary)' : deltaTone(deltaWork) === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
+                      <DeltaChip pct={deltaWork} label={periodLabel} />
+                    </span>
+                  )}
                 </div>
                 <div className={css.ovTile} style={{ animationDelay: '200ms' }}>
                   <span className={css.ovLabel}>缓存量</span>
                   <span className={css.ovValue}>{formatUnits(sum.cache)}</span>
-                  <span style={{ fontSize: 11, lineHeight: '15px', fontFamily: MONO, color: deltaTone(deltaCache) === 'up' ? 'var(--dsw-alias-state-success-primary)' : deltaTone(deltaCache) === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
-                    <DeltaChip pct={deltaCache} label={periodLabel} />
-                  </span>
+                  {deltaCache !== null && (
+                    <span style={{ fontSize: 11, lineHeight: '15px', fontFamily: MONO, color: deltaTone(deltaCache) === 'up' ? 'var(--dsw-alias-state-success-primary)' : deltaTone(deltaCache) === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
+                      <DeltaChip pct={deltaCache} label={periodLabel} />
+                    </span>
+                  )}
                 </div>
                 <div className={css.ovTile} style={{ animationDelay: '240ms' }}>
                   <span className={css.ovLabel}>活跃模型</span>
@@ -553,11 +556,11 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
             <HubSection
               title="缓存命中率"
-              meta={(
+              meta={hitDelta !== null ? (
                 <span style={{ fontSize: 11, lineHeight: '16px', fontFamily: MONO, color: hitTone === 'up' ? 'var(--dsw-alias-state-success-primary)' : hitTone === 'down' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
                   <DeltaChip pct={hitDelta} label={periodLabel} />
                 </span>
-              )}
+              ) : undefined}
             >
               <div style={{ ...panel(14, 8), alignItems: 'center' }}>
                 <Gauge percent={filtered.length > 0 ? hitRate : null} label="命中率" size={compact ? 140 : 168} />
