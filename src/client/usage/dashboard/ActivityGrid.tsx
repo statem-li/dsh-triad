@@ -99,6 +99,7 @@ const SHEET = `
   left: 3px;
   top: 3px;
   bottom: 3px;
+  z-index: 0;
   width: calc((100% - 6px) / 2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-2);
@@ -121,6 +122,8 @@ const SHEET = `
   white-space: nowrap;
   overflow: hidden;
   text-align: center;
+  position: relative;
+  z-index: 1;
   transition: color 220ms cubic-bezier(0.2, 0.8, 0.2, 1), font-weight 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .dsh-activity-tab:hover { color: var(--dsw-alias-label-secondary); }
