@@ -539,6 +539,9 @@ function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd,
   /** 连接日志：真实 MCP 的移除等动作（localStorage 持久化）。 */
   onLogged: (kind: McpLogEntry['kind'], name: string) => void
 }): JSX.Element {
+  // 导航计数与正文统一用 live 真实注册数；servers 是旧面板 localStorage 残留，不再作为计数源。
+  const navServerCount = live.state === 'ready' ? live.data.serverCount : 0;
+  void servers;
   const items: Array<['server' | 'tools' | 'log' | 'config', string, JSX.Element]> = [
     ['server', t('mcpServer'), <McpServerMenuIcon size={15} />],
     ['tools', t('mcpTools'), <CapIcon kind="tool" size={15} />],
@@ -561,7 +564,7 @@ function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd,
             >
               <span className={css.catIcon} data-active={tab === value || undefined}>{icon}</span>
               <span className={css.catLabel}>{label}</span>
-              {value === 'server' && <span className={css.catCount}>{servers.length}</span>}
+              {value === 'server' && <span className={css.catCount}>{navServerCount}</span>}
             </button>
           ))}
         </div>
