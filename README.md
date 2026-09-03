@@ -77,6 +77,8 @@ dsh plugin --profile web remove dsh-triad
   **推荐 MCP Server 目录**（`GET /api/mcp-recommended`：官方 modelcontextprotocol/servers
   + 社区 MCP Registry 合并去重，离线兜底内置清单，5 分钟缓存）、联网搜索
   （`/search?q=`）、GitHub repo 解析（`/resolve?repo=`，用于一键「添加」）、
+  真实注册列表（`GET/POST /api/triad/mcp-status{,/config}`）支持**启用/禁用与删除
+  （移除 cordis.patch.yml 条目，热重载生效，删除前确认弹窗）**、
   工具列表 / 连接日志 / 配置模板、MCP 快速了解引导。
 
 路由：`/api/skill-manager/*`（集合管理）、`/api/skill-toggles/*`（开关与预设覆盖）、

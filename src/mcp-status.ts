@@ -1,14 +1,17 @@
 /**
- * mcp-config — 真实 MCP Server 状态 + 启用/禁用开关（host 半身）。
+ * mcp-config — 真实 MCP Server 状态 + 启用/禁用/删除（host 半身）。
  *
  * GET  /api/triad/mcp-status  只读：注册工具（ctx.tools 中 mcp__*）∪ 配置文件
  *                             （~/.dsh/profiles/web/cordis.patch.yml 的
  *                             mcp-client 条目，含 disabled 标记）。
- * POST /api/triad/mcp-config  写：给某个 mcp-client 条目标记 disabled（禁用）或
- *                             移除标记（启用）。改成文本级编辑，保留注释与其余行；
- *                             改前自动备份到 cordis.patch.yml.bak-last-toggle。
- *                             web profile 为 patchReload: live，写完后 DSH
- *                             热重载配置：禁用→工具立即注销，启用→重新注册。
+ * POST /api/triad/mcp-config  写：三种动作（默认 toggle 兼容旧客户端）：
+ *                             - 无 action → disabled=true/false 标记（禁用/启用）；
+ *                             - action: remove → 删除该 mcp-client 整个条目
+ *                               （连同所属单条目 insert 容器，保留上方注释）。
+ *                             文本级编辑，保留注释与其余行；改前自动备份到
+ *                             cordis.patch.yml.bak-last-toggle。web profile 为
+ *                             patchReload: live，写完后 DSH 热重载配置：
+ *                             禁用→工具立即注销，启用→重新注册，删除→条目消失。
  */
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs'
@@ -186,6 +189,63 @@ function togglePatchEntry(serverName: string, disabled: boolean): { ok: boolean;
   return { ok: true, entryId: entry.entryId, disabled }
 }
 
+/**
+ * 写：从 patch 文件中删除指定 serverName 的完整 mcp-client 条目。
+ *
+ * 以 YAML 缩进界定块边界（避开注释归属问题）：
+ *  - 条目块 = `- id:` 行 + 其下全部缩进行，到下一个 0 缩进行（注释/空行/下一
+ *    顶层条目）或文件尾止；
+ *  - 向上找最近一个 `- ` 行：是 `- insert:` 且其内只剩当前一条 → 连同该
+ *    `- insert:` 整块（按同样缩进边界）删；是 `- id:` 或顶层 → 只删条目块；
+ *  - 条目上方注释按本文件惯例保留（删项留注释存档），不并入删除范围。
+ * 改前自动备份到 cordis.patch.yml.bak-last-toggle。
+ */
+function removePatchEntry(serverName: string): { ok: boolean; error?: string; entryId?: string } {
+  const path = patchFilePath()
+  const content = readPatchContent()
+  if (content === '') return { ok: false, error: `patch file not found: ${path}` }
+  const entries = scanPatchEntries(content)
+  const entry = entries.find((item) => item.serverName === serverName)
+  if (entry === undefined) return { ok: false, error: `no mcp-client entry for serverName "${serverName}" in ${path}` }
+  const lines = content.split(/\r?\n/)
+  /** 块尾：line 之后第一个 0 缩进行（注释/空行/下一个顶层条目）或文件尾。 */
+  const blockEndOf = (line: number): number => {
+    for (let j = line + 1; j < lines.length; j += 1) {
+      const current = lines[j]
+      if (current.length === 0) return j
+      if (!/^[ \t]/.test(current)) return j
+    }
+    return lines.length
+  }
+  // 条目所属容器：向上最近的一个 `- ` 行（可能是 `- insert:`、同 insert 的前一条目，或顶层条目）。
+  let insertLine = -1
+  for (let k = entry.idLine - 1; k >= 0; k -= 1) {
+    const trimmed = lines[k].trimStart()
+    if (trimmed.startsWith('- ')) { insertLine = k; break }
+  }
+  let removeFrom = entry.idLine
+  let removeTo = blockEndOf(entry.idLine)
+  if (insertLine >= 0 && lines[insertLine].trimStart().startsWith('- insert:')) {
+    let itemCount = 0
+    for (let k = insertLine + 1; k < removeTo; k += 1) {
+      if (lines[k].trimStart().startsWith('- id:')) itemCount += 1
+    }
+    // 该 insert 仅含此一条：连 `- insert:` 一起删，不留空容器。
+    if (itemCount === 1) {
+      removeFrom = insertLine
+      removeTo = blockEndOf(insertLine)
+    }
+  }
+  const next = lines.slice(0, removeFrom).concat(lines.slice(removeTo)).join(defaultLineEnding(content))
+  try {
+    copyFileSync(path, `${path}${BACKUP_SUFFIX}`)
+    writeFileSync(path, next, 'utf8')
+  } catch (error) {
+    return { ok: false, error: `write failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  return { ok: true, entryId: entry.entryId }
+}
+
 /* ── 自动守护（watchdog）：MCP 会话被服务端回收后自动重建，DSH 永不卡死 ──
  *
  * 原理：neo（claw-server）正常回收闲置 MCP 会话；回收后它的 REST
@@ -299,9 +359,9 @@ export function applyMcpStatus(ctx: Context): void {
         for await (const chunk of req as unknown as AsyncIterable<Uint8Array>) {
           body += Buffer.from(chunk).toString('utf8')
         }
-        let parsed: { serverName?: unknown; disabled?: unknown }
+        let parsed: { serverName?: unknown; disabled?: unknown; action?: unknown }
         try {
-          parsed = JSON.parse(body) as { serverName?: unknown; disabled?: unknown }
+          parsed = JSON.parse(body) as { serverName?: unknown; disabled?: unknown; action?: unknown }
         } catch {
           writeJsonResponse(res, 400, { ok: false, error: 'invalid json' })
           return
@@ -311,7 +371,9 @@ export function applyMcpStatus(ctx: Context): void {
           writeJsonResponse(res, 400, { ok: false, error: 'serverName required' })
           return
         }
-        const result = togglePatchEntry(serverName, parsed.disabled === true)
+        const result = parsed.action === 'remove'
+          ? removePatchEntry(serverName)
+          : togglePatchEntry(serverName, parsed.disabled === true)
         writeJsonResponse(res, result.ok ? 200 : 400, result)
       })()
     },

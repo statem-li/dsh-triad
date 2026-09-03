@@ -16,6 +16,7 @@ import {
   type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { modalStaggerClass } from '../../modal-animation'
+import { ConfirmDialog } from '../../memory/ConfirmDialog'
 import { PshBody, PopoverShell, type PopoverAnchor } from '../../popover-shell'
 
 /** ---------------------------------------------------------------- 数据模型 */
@@ -179,6 +180,9 @@ const SKILL_ZH: Record<string, string> = {
   mcpLiveToolsOf: '工具',
   mcpLiveRefresh: '刷新',
   mcpLiveConfigHint: '添加：编辑 cordis.patch.yml（或使用「添加 MCP Server」生成配置片段）',
+  mcpRemoveConfirmTitle: '移除 MCP Server',
+  mcpRemoveConfirmMsg: '将从 cordis.patch.yml 中删除「{name}」条目，其工具随即注销且不可恢复；如需恢复请重新添加。',
+  mcpLiveRemoveFailed: '移除失败（配置写保护或条目缺失）',
   mcpCopyDone: '已复制 ✓',
   mcpCopyHint: '已复制配置片段，请粘贴到 cordis.patch.yml 后重启 DSH 生效',
   mcpLogNewNote: '桥接式 MCP（cordis.patch.yml 配置）无本地连接日志：连接状态以「MCP Server」页真实注册为准；此页仅展示旧版面板的本地记录。',
@@ -519,7 +523,7 @@ function McpConfigIcon({ size = 15 }: { size?: number }): JSX.Element {
 }
 
 /** MCP 视图根：左侧竖排菜单（同技能左栏风格）+ 内容区。 */
-function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd, live, onAddCustom, onClearLogs, onRefresh }: {
+function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd, live, onAddCustom, onClearLogs, onRefresh, onLogged }: {
   t: (key: string) => string
   tab: 'server' | 'tools' | 'log' | 'config'
   onTab: (value: 'server' | 'tools' | 'log' | 'config') => void
@@ -532,6 +536,8 @@ function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd,
   onAddCustom: () => void
   onClearLogs: () => void
   onRefresh: () => void
+  /** 连接日志：真实 MCP 的移除等动作（localStorage 持久化）。 */
+  onLogged: (kind: McpLogEntry['kind'], name: string) => void
 }): JSX.Element {
   const items: Array<['server' | 'tools' | 'log' | 'config', string, JSX.Element]> = [
     ['server', t('mcpServer'), <McpServerMenuIcon size={15} />],
@@ -584,7 +590,7 @@ function McpView({ t, tab, onTab, onOpenInfo, servers, recommended, logs, onAdd,
       {/* 右侧内容区 */}
       <div className={css.mcpMain}>
         {tab === 'server' ? (
-          <McpServerView t={t} live={live} onAddCustom={onAddCustom} onOpenInfo={onOpenInfo} onRefresh={onRefresh} />
+          <McpServerView t={t} live={live} onAddCustom={onAddCustom} onOpenInfo={onOpenInfo} onRefresh={onRefresh} onLogged={onLogged} />
         ) : tab === 'tools' ? (
           <McpToolsView t={t} live={live} />
         ) : tab === 'log' ? (
@@ -1273,12 +1279,13 @@ function McpConfigView({ t }: { t: (key: string) => string }): JSX.Element {
 
 /** 推荐 Skill 视图：官方 skills 目录卡片 + 一键安装。 */
 /** MCP Server 页（图一头部 + 统计卡 / 图二真实注册列表；解释内容改为右侧悬浮层）。 */
-function McpServerView({ t, live, onAddCustom, onOpenInfo, onRefresh }: {
+function McpServerView({ t, live, onAddCustom, onOpenInfo, onRefresh, onLogged }: {
   t: (key: string) => string
   live: LiveMcpStatus
   onAddCustom: () => void
   onOpenInfo: () => void
   onRefresh: () => void
+  onLogged: (kind: McpLogEntry['kind'], name: string) => void
 }): JSX.Element {
   const ready = live.state === 'ready' ? live.data : null
   const serverCount = ready?.serverCount ?? 0
@@ -1305,6 +1312,32 @@ function McpServerView({ t, live, onAddCustom, onOpenInfo, onRefresh }: {
       })
       .catch(() => { setToggleError(server.serverName) })
       .finally(() => { setToggling(null) })
+  }
+  /** 删除确认弹窗目标（null=关闭）/ 删除中 / 删除失败的 serverName。 */
+  const [removeReq, setRemoveReq] = useState<LiveMcpServer | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+  /** 删除整个 mcp-client 条目（host 从 cordis.patch.yml 移除 + 热重载）。 */
+  const removeServer = (server: LiveMcpServer): void => {
+    if (removing) return
+    setRemoving(true)
+    setRemoveError(null)
+    void fetch('/api/triad/mcp-config', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ serverName: server.serverName, action: 'remove' }),
+    })
+      .then((response) => response.json().catch(() => null))
+      .then((body) => {
+        if (typeof body !== 'object' || body === null || (body as { ok?: boolean }).ok !== true) {
+          setRemoveError(server.serverName)
+          return
+        }
+        onLogged('remove', server.serverName)
+        onRefresh()
+      })
+      .catch(() => { setRemoveError(server.serverName) })
+      .finally(() => { setRemoving(false) })
   }
   const stats: Array<{ tone: 'blue' | 'green' | 'violet'; icon: JSX.Element; title: string; value: number; desc: string }> = [
     { tone: 'blue', icon: <StatCubeIcon size={20} />, title: t('mcpStatTotal'), value: serverCount, desc: t('mcpStatTotalDesc') },
@@ -1407,14 +1440,43 @@ function McpServerView({ t, live, onAddCustom, onOpenInfo, onRefresh }: {
                     )}
                     <div className={css.mcpCardFoot}>
                       <span className={css.mcpCardItem}>
-                        <span className={css.mcpCardItemLabel}>{toggleError === server.serverName ? t('mcpLiveToggleFailed') : t('mcpLiveConfigHint')}</span>
+                        <span className={css.mcpCardItemLabel}>
+                          {removeError === server.serverName ? t('mcpLiveRemoveFailed')
+                            : toggleError === server.serverName ? t('mcpLiveToggleFailed')
+                              : t('mcpLiveConfigHint')}
+                        </span>
                       </span>
+                      {server.config.editable ? (
+                        <button
+                          type="button"
+                          className={css.mcpCardDelete}
+                          title={t('mcpRemove')}
+                          disabled={removing}
+                          onClick={() => { setRemoveError(null); setRemoveReq(server) }}
+                        >
+                          <IconTrashOutline16 size={13} aria-hidden="true" />
+                          {t('mcpRemove')}
+                        </button>
+                      ) : null}
                     </div>
                   </section>
                 )) ?? null}
               </div>
             )}
           </section>
+          {/* 删除确认弹窗：破坏性操作（danger 红钮），点确认后 host 移除条目并热重载 */}
+          {removeReq !== null && (
+            <ConfirmDialog
+              open
+              title={t('mcpRemoveConfirmTitle')}
+              message={t('mcpRemoveConfirmMsg', { name: removeReq.serverName })}
+              confirmLabel={t('mcpRemove')}
+              cancelLabel={t('cancel')}
+              danger
+              onConfirm={() => { removeServer(removeReq) }}
+              onClose={() => { setRemoveReq(null) }}
+            />
+          )}
         </div>
   )
 }
@@ -2254,8 +2316,10 @@ const SHEET = `
 .skm-mcp-card-item-label{font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#61666b)}
 .skm-mcp-card-item-meta{flex:none;margin-left:auto;font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption,#adb2b8)}
 .skm-mcp-card-item-meta[data-on]{color:var(--dsw-alias-state-business-primary,#4176e6)}
-.skm-mcp-card-delete{margin-left:auto;color:var(--dsw-alias-label-caption,#adb2b8)}
-.skm-mcp-card-delete:hover{background:#fdebeb;color:var(--dsw-alias-state-error-primary,#e0434b)}
+.skm-mcp-card-delete{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:4px;height:26px;box-sizing:border-box;border:1px solid transparent;border-radius:8px;background:transparent;padding:0 8px;font:inherit;font-size:11.5px;font-weight:600;line-height:1;font-family:inherit;color:var(--dsw-alias-label-caption,#adb2b8);cursor:pointer;transition:background 140ms ease,color 140ms ease,border-color 140ms ease,transform 140ms ease}
+.skm-mcp-card-delete:hover{background:#fdebeb;border-color:#f3c4c4;color:var(--dsw-alias-state-error-primary,#e0434b)}
+.skm-mcp-card-delete:active{transform:scale(.94)}
+.skm-mcp-card-delete:disabled{opacity:.5;cursor:default;transform:none}
 .skm-mcp-rec-cats{flex:none;display:inline-flex;align-items:center;gap:6px}
 .skm-mcp-rec-cat{flex:none;display:inline-flex;align-items:center;justify-content:center;height:28px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:999px;background:var(--dsw-alias-bg-base,#fff);padding:0 12px;font-size:12px;line-height:17px;font-family:inherit;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer;transition:background 140ms ease,color 140ms ease,border-color 140ms ease,transform 140ms ease}
 .skm-mcp-rec-cat:hover{border-color:var(--dsw-alias-border-l3,rgba(0,0,0,.16));color:var(--dsw-alias-label-primary,#1f2430)}
@@ -3946,6 +4010,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
               logs={mcpLogs}
               onClearLogs={() => { setMcpLogs([]); saveStoredLogs([]) }}
               onRefresh={() => { mcpRefreshLive() }}
+              onLogged={pushMcpLog}
             />
           ) : (<>          {/* 统计行 */}
           <div className={css.statsRow}>
