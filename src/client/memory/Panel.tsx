@@ -71,6 +71,9 @@ type ScopeFilter = 'all' | 'global' | `project:${string}`
 /** 变更 Tab 的时间范围。 */
 type ChangeRange = 'today' | 'all'
 
+/** 变更列表每页渲染条数（全量历史数千条，一次性渲染会冻结渲染进程）。 */
+const CHANGE_PAGE = 100
+
 /** 列表排序方向（最近 / 最旧）。 */
 type SortDir = 'new' | 'old'
 
@@ -488,6 +491,10 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
   const [summary, setSummary] = useState<MemorySummaryResponse | null>(null)
   const [changes, setChanges] = useState<ChangeView[]>([])
   const [changeRange, setChangeRange] = useState<ChangeRange>('all')
+  // 变更列表分页渲染：全量历史可达数千条（实测 4183 行 / 3.3 万 DOM 节点 /
+  // 34 万 px 列表高），一次挂载会把渲染主线程卡死数秒——这正是「点开记忆
+  // 卡死」的第二层元凶（入口在有未读时直接跳变更 Tab）。默认 100 条一页。
+  const [changeLimit, setChangeLimit] = useState(CHANGE_PAGE)
   const [revisions, setRevisions] = useState<RevisionView[]>([])
   const [editing, setEditing] = useState<EditState | null>(null)
   const [moving, setMoving] = useState<MoveState | null>(null)
@@ -671,6 +678,9 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
 
   // 切项目时清空别名草稿：草稿是「当前选中项目」的编辑态，跟着筛选一起复位。
   useEffect(() => { setAliasDraft(null) }, [scope])
+
+  // 切换范围 / 项目时回到第一页：筛选变了，页码没意义。
+  useEffect(() => { setChangeLimit(CHANGE_PAGE) }, [changeRange, scope])
 
   // 提示语（保存成功等）2.4s 后自动消失。
   useEffect(() => {
@@ -990,6 +1000,12 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
     if (changeRange === 'today') return change.at.slice(0, 10) === (summary?.today ?? '')
     return true
   }), [changes, scope, changeRange, summary])
+
+  /** 当前页渲染的变更（visibleChanges 的前 changeLimit 条）。 */
+  const shownChanges = useMemo(
+    () => visibleChanges.slice(0, changeLimit),
+    [visibleChanges, changeLimit],
+  )
 
   const groupTitles: Record<GroupKey, string> = {
     today: t('groupToday'),
@@ -2021,7 +2037,21 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
               </div>
               {visibleChanges.length === 0
                 ? renderEmpty(t('changesEmpty'))
-                : <ul className={css.cardList}>{visibleChanges.map(renderChange)}</ul>}
+                : (
+                  <>
+                    <ul className={css.cardList}>{shownChanges.map(renderChange)}</ul>
+                    {visibleChanges.length > shownChanges.length && (
+                      <button
+                        type="button"
+                        className={css.changeMore}
+                        onClick={() => { setChangeLimit(limit => limit + CHANGE_PAGE) }}
+                      >
+                        {t('changesLoadMore', { n: visibleChanges.length - shownChanges.length })}
+                        <span aria-hidden="true">▾</span>
+                      </button>
+                    )}
+                  </>
+                )}
             </div>
           )}
 
