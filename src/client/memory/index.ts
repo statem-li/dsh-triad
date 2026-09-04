@@ -44,13 +44,16 @@ export function applyMemoryClient(ctx: ClientContext): void {
   }, 'dsh-memory: nav entry')
 
   // 记忆注入开关：composer 输入框工具行左端（resident chrome 之后，浏览器开关之前）。
-  const panelInjected = (): MemoryApi => createMemoryApi()
+  // api 用单例：slots inject 每次渲染都会调用 inject 函数，若每次返回新对象，
+  // 组件的 useEffect 依赖 api 就会随渲染重发 /inject-state（api.log 实测过
+  // 一分钟 498 次的请求风暴）。createMemoryApi 是无状态 fetch 包装，单例安全。
+  const panelApi = createMemoryApi()
 
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
     name: 'conversation.input.left',
     id: 'dsh-memory-inject-toggle',
     order: 99,
     locale: NS,
-    inject: panelInjected,
+    inject: () => panelApi,
   }, MemoryToggle))
 }

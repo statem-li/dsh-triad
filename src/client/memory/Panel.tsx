@@ -1652,6 +1652,23 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
           </button>
           <nav className={css.navList}>
             {navItem('all', <BoxIcon size={15} />, t('navAll'), summary?.entryCount ?? 0)}
+            {/* 全局层入口：只看 global 层记忆（跨项目通用），与项目区筛选同源（scope=global）。 */}
+            <button
+              type="button"
+              className={tab === 'all' && scope === 'global' ? `${css.navItem} ${css.navItemActive}` : css.navItem}
+              aria-current={tab === 'all' && scope === 'global' ? 'page' : undefined}
+              onClick={() => {
+                setTab('all')
+                setScope('global')
+                setTag('')
+                closeForms()
+                exitSelecting()
+              }}
+            >
+              <span className={css.navIcon}><GlobeIcon size={15} /></span>
+              {t('navGlobal')}
+              {(summary?.globalCount ?? 0) > 0 && <span className={css.navCount}>{summary?.globalCount ?? 0}</span>}
+            </button>
             {navItem('changes', <ClockIcon size={15} />, t('tabChanges'), changeCount)}
             {navItem('revisions', <HistoryIcon size={15} />, t('tabRevisions'), revisions.length)}
             {navItem('trash', <TrashIcon size={15} />, t('navTrash'), summary?.deprecatedCount ?? 0)}

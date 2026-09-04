@@ -181,6 +181,7 @@ export const zh = {
   statChanges: '条变更',
   // ── 三栏应用布局（左导航 / 顶栏 / 筛选行 / 列表 / 详情） ──
   navAll: '全部记忆',
+  navGlobal: '全局记忆',
   navTrash: '回收站',
   navProjects: '项目',
   navCategories: '分类',
@@ -396,6 +397,7 @@ export const en = {
   scopeGlobalOption: 'Global ({n})',
   statChanges: 'changes',
   navAll: 'All memories',
+  navGlobal: 'Global memories',
   navTrash: 'Trash',
   navProjects: 'Projects',
   navCategories: 'Categories',
