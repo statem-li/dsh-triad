@@ -8,6 +8,8 @@ export interface AreaChartProps {
   data: SeriesPoint[]
   height?: number
   colors?: { input: string; output: string; cache: string }
+  /** 系列变体：full = 输入+输出+缓存三层（默认）；io = 输入+输出双层（与 BarChart 口径一致）。 */
+  variant?: 'full' | 'io'
 }
 
 /** 系列展示名（图例 / tooltip）。 */
@@ -95,7 +97,7 @@ export function axisLabel(label: string): string {
   return label
 }
 
-export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS }: AreaChartProps): JSX.Element {
+export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS, variant = 'full' }: AreaChartProps): JSX.Element {
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   // 响应式高度：让 SVG viewport 保持 viewBox 比例（W:H），避免窄屏下
@@ -117,9 +119,11 @@ export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS }: AreaC
   const renderH = wrapW > 0 ? Math.max(120, Math.round((wrapW * H) / W)) : H
   const gradId = useMemo(() => `dsh-area-grad-${++uidCounter}`, [])
 
+  const visibleKeys = variant === 'io' ? (['input', 'output'] as const) : (['input', 'output', 'cache'] as const)
+
   // 堆叠分层：每点是「当天值」而非累计 —— 趋势图语义是每日用量，不是截至当天的累计总量。
-  // cache（底）→ output（中）→ input（顶）。
-  const topCache = useMemo(() => data.map(d => d.cache), [data])
+  // cache（底）→ output（中）→ input（顶）；io 口径下缓存层归零。
+  const topCache = useMemo(() => data.map(d => variant === 'io' ? 0 : d.cache), [data, variant])
   const topOut = useMemo(() => data.map((d, i) => topCache[i] + d.output), [data, topCache])
   const topIn = useMemo(() => data.map((d, i) => topOut[i] + d.input), [data, topOut])
 
@@ -147,13 +151,15 @@ export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS }: AreaC
   }
 
   const hoverPoint = hover !== null ? data[hover.index] : undefined
-  const hoverTotal = hoverPoint !== undefined ? hoverPoint.input + hoverPoint.output + hoverPoint.cache : 0
+  const hoverTotal = hoverPoint !== undefined
+    ? hoverPoint.input + hoverPoint.output + (variant === 'io' ? 0 : hoverPoint.cache)
+    : 0
 
   return (
     <div ref={wrapRef} className="dsh-area-chart" style={{ position: 'relative', paddingTop: 16 }}>
       {/* 图例 */}
       <div className="dsh-area-legend" style={{ position: 'absolute', top: 0, right: 0, display: 'flex', gap: 14, pointerEvents: 'none' }}>
-        {(['input', 'output', 'cache'] as const).map(k => (
+        {visibleKeys.map(k => (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--dsw-alias-label-secondary)' }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: colors[k], flex: 'none' }} />
             {SERIES_NAME[k]}
@@ -182,8 +188,12 @@ export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS }: AreaC
         <line x1={PAD.l} x2={W - PAD.r} y1={H - PAD.b} y2={H - PAD.b} stroke="var(--dsw-alias-border-l2)" />
 
         {/* 堆叠面积：cache 底 → output 中 → input 顶；顶部描边线保证层边界清晰 */}
-        <path d={areaPath(topCache, topCache.map(() => 0))} fill={`url(#${gradId}-cache)`} />
-        <path d={linePath(topCache)} fill="none" stroke={colors.cache} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+        {variant === 'full' && (
+          <>
+            <path d={areaPath(topCache, topCache.map(() => 0))} fill={`url(#${gradId}-cache)`} />
+            <path d={linePath(topCache)} fill="none" stroke={colors.cache} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+          </>
+        )}
         <path d={areaPath(topOut, topCache)} fill={`url(#${gradId}-output)`} />
         <path d={linePath(topOut)} fill="none" stroke={colors.output} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
         <path d={areaPath(topIn, topOut)} fill={`url(#${gradId}-input)`} />
@@ -193,7 +203,9 @@ export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS }: AreaC
         {hover !== null && (
           <g className="dsh-area-hover">
             <line x1={x(hover.index)} x2={x(hover.index)} y1={PAD.t} y2={H - PAD.b} stroke="var(--dsw-alias-border-l3)" strokeDasharray="3 3" />
-            {([['input', topIn], ['output', topOut], ['cache', topCache]] as const).map(([k, top]) => (
+            {(variant === 'io'
+              ? [['input', topIn], ['output', topOut]] as Array<[SeriesKey, number[]]>
+              : [['input', topIn], ['output', topOut], ['cache', topCache]] as Array<[SeriesKey, number[]]>).map(([k, top]) => (
               <circle key={k} cx={x(hover.index)} cy={clampY(top[hover.index])} r={4}
                 fill="var(--dsw-alias-bg-layer-2)" stroke={colors[k]} strokeWidth={2} />
             ))}
@@ -224,7 +236,7 @@ export function AreaChart({ data, height = 240, colors = DEFAULT_COLORS }: AreaC
       {hover !== null && hoverPoint !== undefined && typeof document !== 'undefined' && createPortal(
         <ChartTooltip x={hover.x} y={hover.y} placement={hover.y < 180 ? 'bottom' : 'top'}>
           <div style={{ fontWeight: 600, color: 'var(--dsw-alias-label-primary)', marginBottom: 4 }}>{hoverPoint.label}</div>
-          {(['input', 'output', 'cache'] as const).map(k => (
+          {visibleKeys.map(k => (
             <div key={k} className="dsh-chart-tip-row" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: colors[k], flex: 'none' }} />
               <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>{SERIES_NAME[k]}</span>

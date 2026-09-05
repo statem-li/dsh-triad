@@ -14,14 +14,17 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { usageApi, type ProviderInfo } from './api'
-import { averageCacheHitRate, modelRank, providerShare, sumActivity, sumTokens, type UsageDay, type UsageHour } from './aggregate'
+import { averageCacheHitRate, filterDaysByProvider, modelRank, providerShare, splitModelKey, sumActivity, sumTokens, type UsageDay, type UsageHour } from './aggregate'
 import {
   aggregateHourSeries, aggregateSeries, dailyAverage, deltaPercent, filterDays, fromDayStr, prevRange, rangeDays,
-  resolveRange, toDayStr, type DateRange, type Grain,
+  toDayStr, type DateRange, type Grain,
 } from './range'
 import { formatExact, formatUnits, formatWorkDuration, formatYiExact } from './format'
 import { providerPalette } from './theme'
 import { BarChart } from './charts/BarChart'
+import { AreaChart } from './charts/AreaChart'
+import { DonutChart } from './charts/DonutChart'
+import { ProviderLines } from './charts/ProviderLines'
 import { RankBars } from './charts/RankBars'
 import { Gauge } from './charts/Gauge'
 import { panel } from './dash'
@@ -38,6 +41,8 @@ export interface TrendTabProps {
   onJumpSignal?: () => void
   onJumpDetail?: () => void
   refreshTick?: number
+  /** 顶栏供应商筛选（'all' = 全部供应商）。小时粒度无供应商拆分，筛选时自动按天口径绘制。 */
+  provider?: string
 }
 
 export const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace'
@@ -169,27 +174,43 @@ function LinkButton({ children, onClick }: { children: ReactNode; onClick: () =>
   )
 }
 
-/* ── 图表卡分段（快捷时间窗） ── */
-type ChartTabKey = 'hour' | 'day' | '7d' | '30d'
-const CHART_TABS: Array<{ key: ChartTabKey; label: string }> = [
-  { key: 'hour', label: '小时' },
-  { key: 'day', label: '天' },
-  { key: '7d', label: '7天' },
-  { key: '30d', label: '30天' },
-]
-
-/** 由左栏范围推断图表分段（左栏切范围时自动跟随）。 */
-function inferChartTab(r: DateRange): ChartTabKey {
-  const n = rangeDays(r)
-  if (n <= 1) return 'hour'
-  if (n <= 7) return '7d'
-  return '30d'
-}
-
 /** 图表单位（Y 轴/数值格式化）。 */
 type UnitKey = 'auto' | 'wan' | 'yi'
 
-export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJumpDetail, refreshTick }: TrendTabProps): JSX.Element {
+/** 趋势图底部数据条：描述当前所绘窗口（周期合计/峰值/日均/有量天数），随样式与口径实时重算。 */
+function ChartFoot({ series, stackMode, format }: {
+  series: Array<{ label: string; input: number; output: number; cache: number }>
+  stackMode: 'io' | 'full'
+  format: (n: number) => string
+}): JSX.Element {
+  const totals = series.map(p => stackMode === 'io' ? p.input + p.output : p.input + p.output + p.cache)
+  const sum = totals.reduce((a, v) => a + v, 0)
+  const peakIdx = totals.length > 0 ? totals.indexOf(Math.max(...totals)) : -1
+  const peak = peakIdx >= 0 ? series[peakIdx] : undefined
+  const peakLabel = peak === undefined ? '—' : (peak.label.length >= 10 && peak.label[4] === '-' ? peak.label.slice(5) : peak.label)
+  return (
+    <div className={css.ovGrid} style={{ paddingTop: 10, borderTop: '1px solid var(--dsw-alias-border-l1)' }}>
+      <div className={css.ovTile} style={{ animationDelay: '0ms' }}>
+        <span className={css.ovLabel}>周期合计</span>
+        <span className={css.ovValue}>{format(sum)}</span>
+      </div>
+      <div className={css.ovTile} style={{ animationDelay: '40ms' }}>
+        <span className={css.ovLabel}>峰值 · {peakLabel}</span>
+        <span className={css.ovValue}>{peakIdx >= 0 ? format(totals[peakIdx]) : '—'}</span>
+      </div>
+      <div className={css.ovTile} style={{ animationDelay: '80ms' }}>
+        <span className={css.ovLabel}>周期日均</span>
+        <span className={css.ovValue}>{series.length > 0 ? format(sum / series.length) : '—'}</span>
+      </div>
+      <div className={css.ovTile} style={{ animationDelay: '120ms' }}>
+        <span className={css.ovLabel}>有量天数</span>
+        <span className={css.ovValue}>{totals.filter(v => v > 0).length}/{series.length}</span>
+      </div>
+    </div>
+  )
+}
+
+export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJumpDetail, refreshTick, provider = 'all' }: TrendTabProps): JSX.Element {
   const [usage, setUsage] = useState<UsageDay[] | null>(null)
   const [hours, setHours] = useState<UsageHour[]>([])
   const [providers, setProviders] = useState<ProviderInfo[]>([])
@@ -202,11 +223,14 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
   /** 统计卡展开的明细（哪个卡开着；null = 全收）。 */
   const [openStat, setOpenStat] = useState<string | null>(null)
 
-  /** 图表卡分段（快捷时间窗）+ 单位。 */
-  const [chartTab, setChartTab] = useState<ChartTabKey>('hour')
-  const [chartTabTouched, setChartTabTouched] = useState(false)
+  /** Y 轴单位。 */
   const [unit, setUnit] = useState<UnitKey>('auto')
   const [unitOpen, setUnitOpen] = useState(false)
+
+  /** 图表样式（柱状/面积）+ 堆叠口径（输入+输出/全口径含缓存）。 */
+  const [chartStyle, setChartStyle] = useState<'bar' | 'area'>('bar')
+  const [stackMode, setStackMode] = useState<'io' | 'full'>('full')
+  const [stackOpen, setStackOpen] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -224,12 +248,6 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
     return () => { alive = false }
   }, [refreshTick, retryTick])
 
-  // 左栏切范围：图表分段自动跟随一次（用户手动点过分段后不强行覆盖）。
-  useEffect(() => {
-    if (!chartTabTouched) setChartTab(inferChartTab(range))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.start, range.end])
-
   if (error) {
     return <ErrorCard message={error} onRetry={() => setRetryTick(t => t + 1)} />
   }
@@ -237,8 +255,11 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
     return <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' }}>加载中…</div>
   }
 
-  const filtered = filterDays(usage, range)
-  const previous = filterDays(usage, prevRange(range))
+  const provActive = provider.trim() !== '' && provider.trim() !== 'all'
+  const scopeLabel = `${rangeLabel}${provActive ? ` · ${provider.trim()}` : ''}`
+  const scoped = filterDaysByProvider(usage, provider)
+  const filtered = filterDays(scoped, range)
+  const previous = filterDays(scoped, prevRange(range))
   const sum = sumTokens(filtered)
   const prevSum = sumTokens(previous)
   const hitRate = averageCacheHitRate(filtered)
@@ -248,15 +269,18 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
   const activity = sumActivity(filtered)
   const prevActivity = sumActivity(previous)
 
+
   const periodLabel = rangeDays(range) <= 1 ? '较昨日' : '较上期'
 
-  /* ── 图表卡：分段 → 时间窗与粒度 ── */
-  const chartRange: DateRange = chartTab === 'hour' || chartTab === 'day'
-    ? resolveRange('today').range
-    : resolveRange(chartTab).range
-  const grain: Grain = chartTab === 'hour' ? 'hour' : 'day'
-  const chartDays = filterDays(usage, chartRange)
-  const series = grain === 'hour' ? aggregateHourSeries(hours, chartRange) : aggregateSeries(chartDays, 'day')
+  /* ── 图表卡：直接采用右上角查询范围；粒度随跨度自适应 ──
+   * 单日 → 小时粒度（小时级无供应商拆分，筛选时退回天粒度）；
+   * 62 天以内 → 天粒度；更长跨度 → 周粒度，避免柱子过密。 */
+  const spanDays = rangeDays(range)
+  const autoGrain: Grain = spanDays <= 1 && !provActive ? 'hour' : spanDays <= 62 ? 'day' : 'week'
+  const chartDays = filterDays(scoped, range)
+  const series = autoGrain === 'hour'
+    ? aggregateHourSeries(hours, range)
+    : aggregateSeries(chartDays, autoGrain === 'week' ? 'week' : 'day')
   const showTrend = series.length >= 1
 
   /** 7天平均（输入）参考线：小时窗 = 同小时 7 天均值；天窗 = 近 7 点滚动均值。
@@ -264,8 +288,8 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
    *  error/空态 return 之后，数据到达时钩子数变化触发 React #310 崩溃。 */
   const baseline = ((): { label: string; values: Array<number | null> } | undefined => {
     if (series.length === 0) return undefined
-    if (grain === 'hour' && chartRange.start === chartRange.end) {
-      const day = chartRange.start
+    if (autoGrain === 'hour') {
+      const day = range.start
       const values = series.map(p => {
         const hh = p.label.slice(0, 2)
         let bucket = 0
@@ -279,7 +303,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
       })
       return { label: '7天平均（输入）', values }
     }
-    if (grain === 'day') {
+    if (autoGrain === 'day') {
       const values = series.map((_, i) => {
         const start = Math.max(0, i - 6)
         let bucket = 0
@@ -301,11 +325,47 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
   const palette = providerPalette()
   const shareTotal = share.reduce((a, s) => a + s.tokens, 0)
   const shareTop = share[0]?.tokens ?? 1
+
+  /* ── 新增图表数据（全部随供应商筛选；小时分布除外：小时级无供应商拆分） ── */
+  const lineProvs = share.slice(0, 5).map(s => s.provider)
+  const lineSeries = lineProvs.map(p => ({
+    provider: p,
+    values: filtered.map(d => (d.models ?? []).reduce((a, m) => a + (splitModelKey(m.model).provider === p ? (m.tokens ?? 0) : 0), 0)),
+  }))
+  const lineLabels = filtered.map(d => d.date)
+  const hasLineData = lineSeries.some(s => s.values.some(v => v > 0))
+
+  const composeSlices = [
+    { label: '输入', value: sum.input, color: 'var(--dsw-alias-state-business-primary)' },
+    { label: '输出', value: sum.output, color: '#7c5cf0' },
+    { label: '缓存读取', value: sum.cache, color: 'var(--dsw-alias-label-tertiary)' },
+  ]
+
+  const hourDaySet = new Set(filtered.map(d => d.date))
+  const hourBars = Array.from({ length: 24 }, (_, h) => {
+    const hh = String(h).padStart(2, '0')
+    let input = 0
+    let output = 0
+    for (const e of hours) {
+      if (typeof e.hour !== 'string' || e.hour.length < 12) continue
+      if (e.hour.slice(-2) !== hh || !hourDaySet.has(e.hour.slice(0, 10))) continue
+      input += e.inputTokens ?? 0
+      output += e.outputTokens ?? 0
+    }
+    return { label: hh, input, output, cache: 0 }
+  })
+  const hasHourData = hourBars.some(b => b.input + b.output > 0)
+
+  const topDays = [...filtered]
+    .filter(d => (d.tokens ?? 0) > 0)
+    .sort((a, b) => (b.tokens ?? 0) - (a.tokens ?? 0))
+    .slice(0, 7)
+    .map(d => ({ label: d.date, value: d.tokens ?? 0, hitRate: d.cacheHitRate ?? null }))
   const anomalyCount = anomalyCountOf(filtered)
   const prevAnomalyCount = anomalyCountOf(previous)
 
   const anomalyMap = (() => {
-    if (grain !== 'day' || chartDays.length === 0) return null
+    if (autoGrain !== 'day' || chartDays.length === 0) return null
     const actives = chartDays.map(d => d.tokens ?? 0).filter(v => v > 0).sort((a, b) => a - b)
     if (actives.length === 0) return null
     const mid = Math.floor(actives.length / 2)
@@ -366,7 +426,7 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
   const hitTone: 'up' | 'down' | 'flat' = hitDelta === null ? 'flat' : hitDelta > 0 ? 'up' : hitDelta < 0 ? 'down' : 'flat'
 
   return (
-    <div style={{ maxWidth: 1380, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* ── KPI 统计行：方块图标 + 大数 + 较昨日/较上期 chip ── */}
       <div className={css.statsRow}>
         <HubStat
@@ -443,22 +503,45 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
             <HubSection
               title="用量趋势"
+              meta={scopeLabel}
               action={(
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div className={css.seg} role="tablist" aria-label="趋势时间窗">
-                    {CHART_TABS.map(t => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', rowGap: 6, justifyContent: 'flex-end' }}>
+                  <div className={css.seg} role="tablist" aria-label="图表样式">
+                    {([['bar', '柱状'], ['area', '面积']] as Array<['bar' | 'area', string]>).map(([key, name]) => (
                       <button
-                        key={t.key}
+                        key={key}
                         type="button"
                         role="tab"
-                        aria-selected={chartTab === t.key}
+                        aria-selected={chartStyle === key}
                         className={css.segBtn}
-                        data-active={chartTab === t.key || undefined}
-                        onClick={() => { setChartTab(t.key); setChartTabTouched(true) }}
+                        data-active={chartStyle === key || undefined}
+                        onClick={() => { setChartStyle(key) }}
                       >
-                        {t.label}
+                        {name}
                       </button>
                     ))}
+                  </div>
+                  <div className={css.dropWrap}>
+                    <button type="button" className={css.toolButton} style={{ height: 24, padding: '0 8px', fontSize: 11, gap: 5 }} aria-haspopup="menu" aria-expanded={stackOpen || undefined} title="堆叠口径" onClick={() => setStackOpen(v => !v)}>
+                      {stackMode === 'io' ? '输入+输出' : '全口径'}
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </button>
+                    {stackOpen && (
+                      <>
+                        <div className={css.bulkOverlay} onClick={() => setStackOpen(false)} />
+                        <div className={css.dropMenu} role="menu" aria-label="堆叠口径" style={{ left: 'auto', right: 0 }}>
+                          {([['io', '输入+输出', '不含缓存'], ['full', '全口径', '含缓存读取']] as Array<['io' | 'full', string, string]>).map(([key, name, meta]) => (
+                            <button key={key} type="button" role="menuitemradio" className={css.dropItem} aria-checked={stackMode === key} onClick={() => { setStackMode(key); setStackOpen(false) }}>
+                              <span className={css.dropCheck} data-on={stackMode === key || undefined}>✓</span>
+                              {name}
+                              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' }}>{meta}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                   {/* 单位下拉：Tokens 自动 / 万 / 亿 */}
                   <div className={css.dropWrap}>
@@ -489,23 +572,36 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
                 <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   {showTrend
                     ? (
-                      <BarChart
-                        data={series}
-                        variant="io"
-                        baseline={baseline}
-                        format={fmt}
-                        anomalies={anomalyMap ?? undefined}
-                        onSelectAnomaly={anomalyMap !== null && onJumpSignal !== undefined ? () => onJumpSignal() : undefined}
-                        height={compact ? 200 : 250}
-                      />
+                      chartStyle === 'bar'
+                        ? (
+                          <BarChart
+                            key={`bar-${stackMode}`}
+                            data={series}
+                            variant={stackMode}
+                            baseline={baseline}
+                            format={fmt}
+                            anomalies={anomalyMap ?? undefined}
+                            onSelectAnomaly={anomalyMap !== null && onJumpSignal !== undefined ? () => onJumpSignal() : undefined}
+                            height={compact ? 200 : 250}
+                          />
+                        )
+                        : (
+                          <AreaChart
+                            key={`area-${stackMode}`}
+                            data={series}
+                            variant={stackMode}
+                            height={compact ? 200 : 250}
+                          />
+                        )
                     )
                     : emptyHint('暂无可绘制的趋势数据')}
                 </div>
+                {showTrend && <ChartFoot series={series} stackMode={stackMode} format={fmt} />}
               </div>
             </HubSection>
 
             {/* ── 概览瓦片 ── */}
-            <HubSection title={`${rangeLabel.replace(/\s/g, '')}概览`}>
+            <HubSection title={`${scopeLabel.replace(/\s/g, '')}概览`}>
               <div className={css.ovGrid}>
                 <div className={css.ovTile} style={{ animationDelay: '120ms' }}>
                   <span className={css.ovLabel}>日均 Tokens</span>
@@ -640,14 +736,60 @@ export function TrendTab({ range, rangeLabel, onJumpAccounts, onJumpSignal, onJu
           </div>
         </div>
 
+        {/* ── 新增：供应商趋势对比 + 用量构成 ── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: compact ? '1fr' : 'minmax(0, 1.6fr) minmax(280px, 1fr)',
+          gap: 10, alignItems: 'start', minWidth: 0,
+        }}>
+          <HubSection title="供应商趋势对比" meta={`${scopeLabel} · Top ${lineProvs.length}`}>
+            <div style={{ ...panel(14, 10), minHeight: 250 }}>
+              {hasLineData
+                ? <ProviderLines key={`${provider.trim()}-${range.start}-${range.end}`} series={lineSeries} labels={lineLabels} height={compact ? 200 : 240} />
+                : emptyHint(`${scopeLabel}暂无用量`)}
+            </div>
+          </HubSection>
+          <HubSection title="用量构成" meta={scopeLabel}>
+            <div style={{ ...panel(14, 10), minHeight: 250, justifyContent: 'center' }}>
+              {sum.total > 0
+                ? <DonutChart slices={composeSlices} centerTitle="本期总量" centerValue={formatUnits(sum.total)} />
+                : emptyHint(`${scopeLabel}暂无用量`)}
+            </div>
+          </HubSection>
+        </div>
+
+        {/* ── 新增：24 小时分布 + 高峰日排行 ── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: compact ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)',
+          gap: 10, alignItems: 'start', minWidth: 0,
+        }}>
+          <HubSection title="24 小时分布" meta={provActive ? '小时数据无供应商拆分' : `${rangeLabel} · 全供应商`}>
+            <div style={{ ...panel(14, 10) }}>
+              {provActive
+                ? <div className={css.empty}>小时数据无供应商拆分，清除筛选后查看</div>
+                : hasHourData
+                  ? <BarChart data={hourBars} variant="io" movingAverage={0} height={compact ? 170 : 200} />
+                  : emptyHint('暂无小时级数据')}
+            </div>
+          </HubSection>
+          <HubSection title="高峰日排行" meta={`${scopeLabel} · Top ${topDays.length}`}>
+            <div style={{ ...panel(14, 10) }}>
+              {topDays.length === 0
+                ? emptyHint(`${scopeLabel}暂无用量`)
+                : <RankBars rows={topDays} maxRows={7} nameWidth={compact ? 110 : 130} ranked dot={false} />}
+            </div>
+          </HubSection>
+        </div>
+
         {/* ── 模型消耗排行 ── */}
         <HubSection
           title="模型消耗排行"
-          meta={`${rangeLabel} · Top ${Math.min(10, rank.length)}`}
+          meta={`${scopeLabel} · Top ${Math.min(10, rank.length)}`}
           action={rank.length > 0 && onJumpDetail !== undefined ? <LinkButton onClick={onJumpDetail}>查看更多</LinkButton> : undefined}
         >
           <div style={{ ...panel(14, 10) }}>
-            {rank.length === 0 ? emptyHint(`${rangeLabel}暂无用量`) : <RankBars rows={rank} nameWidth={compact ? 140 : 200} ranked />}
+            {rank.length === 0 ? emptyHint(`${scopeLabel}暂无用量`) : <RankBars rows={rank} nameWidth={compact ? 140 : 200} ranked />}
           </div>
         </HubSection>
       </div>

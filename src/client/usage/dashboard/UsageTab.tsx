@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import { usageApi } from './api'
-import { averageCacheHitRate, modelRank, splitModelKey, sumTokens, type UsageDay } from './aggregate'
+import { averageCacheHitRate, filterDaysByProvider, modelRank, splitModelKey, sumTokens, type UsageDay } from './aggregate'
 import { filterDays, fromDayStr, toDayStr, type DateRange } from './range'
 import { formatExact, formatHitRate, formatUnits } from './format'
 import { RankBars } from './charts/RankBars'
@@ -25,6 +25,8 @@ export interface UsageTabProps {
   range: DateRange
   rangeLabel: string
   refreshTick?: number
+  /** 顶栏供应商筛选（'all' = 全部供应商），与工具栏文本搜索叠加生效。 */
+  provider?: string
 }
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace'
@@ -208,7 +210,7 @@ const METRIC_OPTIONS: Array<{ id: ActivityMetric; label: string }> = [
   { id: 'requests', label: '调用次数' },
 ]
 
-export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX.Element {
+export function UsageTab({ range, rangeLabel, refreshTick, provider = 'all' }: UsageTabProps): JSX.Element {
   const [usage, setUsage] = useState<UsageDay[] | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [activityMode, setActivityMode] = useState<ActivityMode>('day')
@@ -233,6 +235,8 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
 
   useEffect(() => ensureSearchStyle(), [])
 
+  useEffect(() => { setSelectedDay(null) }, [provider])
+
   if (error) {
     return <ErrorCard message={error} onRetry={() => setRetryTick(t => t + 1)} />
   }
@@ -243,7 +247,8 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
   const month = now.getMonth() + 1
   const monthPrefix = `${year}-${String(month).padStart(2, '0')}`
 
-  const filtered = [...filterDays(usage, range)].sort((a, b) => a.date.localeCompare(b.date))
+  const scoped = filterDaysByProvider(usage, provider)
+  const filtered = [...filterDays(scoped, range)].sort((a, b) => a.date.localeCompare(b.date))
   const filteredSorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date))
 
   const modelRankData = modelRank(filtered).map(row => {
@@ -254,12 +259,16 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
 
   const detailRows = buildDetailRows(filteredSorted, query)
   const searching = query.trim() !== ''
+  const provActive = provider.trim() !== '' && provider.trim() !== 'all'
+  const provName = provider.trim()
+  const scopeLabel = `${rangeLabel}${provActive ? ` · ${provName}` : ''}`
+  const noMatchHint = `没有匹配${provActive ? `「${provName}」供应商` : ''}${searching && provActive ? '且' : ''}${searching ? `「${query.trim()}」` : ''}的数据`
   const inRangeSum = sumTokens(filtered)
   const hitRate = averageCacheHitRate(filtered)
 
   // ── KPI「较昨日」：范围最后一天 vs 前一天 ──
   const usageByDate = new Map<string, UsageDay>()
-  for (const d of usage) usageByDate.set(d.date, d)
+  for (const d of scoped) usageByDate.set(d.date, d)
   const lastDay = filtered.length > 0 ? filtered[filtered.length - 1] : null
   const prevDay = lastDay === null ? undefined : usageByDate.get(toDayStr(new Date(fromDayStr(lastDay.date).getTime() - 86_400_000)))
   const modelsDelta = lastDay === null ? null : distinctModels(lastDay) - distinctModels(prevDay)
@@ -272,7 +281,7 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
   const hitSub = deltaSubPercent(hitDelta)
 
   // ── 热力数据（随搜索与指标） ──
-  const heatDays = filterUsageByQuery(usage, query)
+  const heatDays = filterUsageByQuery(scoped, query)
   const daysInMonth = new Date(year, month, 0).getDate()
   const monthCells: MonthCell[] = Array.from({ length: daysInMonth }, (_, i) => {
     const dateStr = `${monthPrefix}-${String(i + 1).padStart(2, '0')}`
@@ -437,7 +446,7 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
           )}
         </div>
         <span className={css.toolbarSpacer} />
-        <span className={css.toolbarMeta}>{rangeLabel} · {searching ? `命中 ${detailRows.length} 行` : `${filteredSorted.length} 天`}</span>
+        <span className={css.toolbarMeta}>{scopeLabel} · {searching ? `命中 ${detailRows.length} 行` : `${filteredSorted.length} 天`}</span>
       </div>
 
       <div className={`${css.mainScroll} ${modalStaggerClass}`}>
@@ -469,27 +478,27 @@ export function UsageTab({ range, rangeLabel, refreshTick }: UsageTabProps): JSX
         {selectedDay !== null && (
           <HubSection title={`${selectedDay} 模型明细`}>
             <div style={rowCard}>
-              <DayDetailTable day={usage.find(d => d.date === selectedDay)} />
+              <DayDetailTable day={scoped.find(d => d.date === selectedDay)} />
             </div>
           </HubSection>
         )}
 
         {/* 模型消耗排行（受搜索影响） */}
-        <HubSection title="模型消耗排行" meta={`${rangeLabel} · ${sortedRank.length} 个模型`}>
+        <HubSection title="模型消耗排行" meta={`${scopeLabel} · ${sortedRank.length} 个模型`}>
           <div style={rowCard}>
             {sortedRank.length === 0
-              ? <div className={css.empty}>{searching ? `没有匹配「${query.trim()}」的供应商或模型` : '该范围暂无用量'}</div>
+              ? <div className={css.empty}>{(searching || provActive) ? noMatchHint : '该范围暂无用量'}</div>
               : <RankBars rows={sortedRank} nameWidth={isMobile ? 140 : 220} />}
           </div>
         </HubSection>
 
         {/* 每日明细 */}
-        <HubSection title="每日明细" meta={searching ? `命中 ${detailRows.length} 行` : `${filteredSorted.length} 天`}>
+        <HubSection title="每日明细" meta={searching ? `命中 ${detailRows.length} 行` : `${scopeLabel} · ${filteredSorted.length} 天`}>
           <div style={rowCard}>
             {filteredSorted.length === 0 ? (
               <div className={css.empty}>该范围暂无用量</div>
             ) : detailRows.length === 0 ? (
-              <div className={css.empty}>没有匹配「{query.trim()}」的供应商或模型</div>
+              <div className={css.empty}>{noMatchHint}</div>
             ) : (
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -252,7 +252,9 @@ const SHEET = `
 .usm-topbar { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.05)); background: var(--dsw-alias-bg-base, #fff); }
 .usm-cat-row { flex: 1 1 auto; min-width: 200px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .usm-cat-row .usm-cat-item { flex: none; width: auto; }
-.usm-top-range { flex: none; display: flex; align-items: center; }
+.usm-top-range { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.usm-top-range .usm-drop-wrap .usm-tool-button { height: 30px; border-radius: 999px; font-size: 12px; }
+.usm-top-range .usm-drop-menu { left: auto; right: 0; }
 .usm-top-range .usm-range-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; }
 .usm-top-range .usm-range-custom { margin-top: 0; }
 /* ── 移动端：左栏转横向导航 ── */

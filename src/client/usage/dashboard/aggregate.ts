@@ -102,6 +102,38 @@ export function averageCacheHitRate(days: UsageDay[]): number {
   return sum / days.length
 }
 
+/** 按供应商精确过滤日数据（顶栏下拉用；'all'/空 = 不过滤）。
+ * 命中模型保留并重算合计，未命中天记零值以保持时间轴不断。趋势/明细两 tab 共用。 */
+export function filterDaysByProvider(days: UsageDay[], provider: string | undefined): UsageDay[] {
+  const p = (provider ?? 'all').trim()
+  if (p === '' || p === 'all') return days
+  return days.map(d => {
+    const matched = (d.models ?? []).filter(m => splitModelKey(m.model).provider === p)
+    if (matched.length === (d.models?.length ?? 0)) return d
+    let input = 0
+    let output = 0
+    let cacheRead = 0
+    let cacheWrite = 0
+    for (const m of matched) {
+      input += m.inputTokens ?? 0
+      output += m.outputTokens ?? 0
+      cacheRead += m.cacheReadTokens ?? 0
+      cacheWrite += m.cacheWriteTokens ?? 0
+    }
+    const prompt = input + cacheRead + cacheWrite
+    return {
+      ...d,
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+      tokens: input + output + cacheRead + cacheWrite,
+      cacheHitRate: prompt > 0 ? (cacheRead / prompt) * 100 : 0,
+      models: matched,
+    }
+  })
+}
+
 /** 范围内累计调用次数与工作时长（毫秒）。 */
 export function sumActivity(days: UsageDay[]): { requests: number; workMs: number } {
   let requests = 0
