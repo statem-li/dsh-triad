@@ -248,41 +248,43 @@ const SHEET = `
 
 /* ── 面板骨架 ─────────────────────────────────────────────────────── */
 .dsh-memory-modal-body{overflow:hidden;display:flex;flex-direction:column}
-.dsh-memory-panel{flex:1;min-height:0;display:flex;flex-direction:row;gap:0;overflow:hidden;padding:0;box-sizing:border-box}
+.dsh-memory-panel{flex:1;min-height:0;display:flex;flex-direction:column;gap:0;overflow:hidden;padding:0;box-sizing:border-box}
 
-/* ── 左栏：导航 / 项目 / 分类 ─────────────────────────────────────── */
-.dsh-memory-sidebar{flex:none;width:200px;box-sizing:border-box;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;padding:14px 10px 10px;background:var(--m-side);border-right:1px solid var(--m-side-line)}
-.dsh-memory-sidebar-brand{display:flex;align-items:center;gap:10px;padding:2px 6px 12px}
+/* ── 顶栏：导航 / 项目 / 分类横排（取代旧左栏，主区纵向排布） ───────── */
+.dsh-memory-sidebar{flex:none;width:100%;max-height:132px;box-sizing:border-box;display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;overflow-y:auto;overflow-x:hidden;padding:10px 14px;background:var(--m-side);border-right:none;border-bottom:1px solid var(--m-side-line)}
+.dsh-memory-sidebar-brand{display:none}
 .dsh-memory-sidebar-logo{flex:none;width:26px;height:26px;border-radius:8px;background:var(--m-primary);display:inline-flex;align-items:center;justify-content:center;color:#fff}
 .dsh-memory-sidebar-title{font-size:16px;font-weight:700;line-height:24px;color:var(--m-text)}
-.dsh-memory-sidebar-add{width:100%;height:37px;margin-bottom:10px;border:none;border-radius:10px;background:var(--m-primary);color:#fff;font-size:13px;font-weight:600;line-height:20px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;transition:background .16s cubic-bezier(.2,.8,.2,1),box-shadow .16s ease,transform .12s ease}
+.dsh-memory-sidebar-add{width:auto;height:34px;padding:0 14px;margin-bottom:0;border:none;border-radius:10px;background:var(--m-primary);color:#fff;font-size:13px;font-weight:600;line-height:20px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;transition:background .16s cubic-bezier(.2,.8,.2,1),box-shadow .16s ease,transform .12s ease}
 .dsh-memory-sidebar-add:hover{background:var(--m-primary-hover);box-shadow:0 4px 14px rgba(65,118,230,.28)}
 .dsh-memory-sidebar-add:active{transform:scale(.985)}
 .dsh-memory-sidebar-add:disabled{opacity:.5;cursor:default}
-.dsh-memory-nav-list{display:flex;flex-direction:column;gap:1px}
-.dsh-memory-nav-item{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;height:36px;padding:0 10px;border:none;border-radius:8px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
+/* 一级：视图 tabs 收进分段控件底座，跟下面的胶囊拉开层级 */
+.dsh-memory-nav-list{display:flex;flex-direction:row;flex-wrap:wrap;gap:2px;background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.04));border:1px solid var(--m-border);border-radius:12px;padding:4px}
+.dsh-memory-nav-item{display:flex;align-items:center;gap:8px;width:auto;flex:none;box-sizing:border-box;height:30px;border-radius:8px;padding:0 10px;border:none;border-radius:8px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
 .dsh-memory-nav-item:hover{background:rgba(65,118,230,.06);color:var(--m-text)}
 .dsh-memory-nav-item-active,.dsh-memory-nav-item-active:hover{background:var(--m-primary-soft);color:var(--m-primary);font-weight:600}
 .dsh-memory-nav-icon{flex:none;display:inline-flex;align-items:center;color:inherit}
 .dsh-memory-nav-count{margin-left:auto;font-size:12px;line-height:18px;color:var(--m-text-3);font-variant-numeric:tabular-nums}
 .dsh-memory-nav-item-active .dsh-memory-nav-count{color:var(--m-primary)}
-.dsh-memory-nav-sep{height:1px;margin:10px -10px 4px;background:var(--m-side-line)}
-.dsh-memory-section-header{display:flex;align-items:center;justify-content:space-between;padding:8px 6px 4px}
+.dsh-memory-nav-sep{display:none}
+.dsh-memory-section-header{display:none}
 .dsh-memory-section-title{font-size:13px;font-weight:500;line-height:20px;color:var(--m-text-2)}
 .dsh-memory-section-plus{flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:none;border-radius:6px;background:transparent;color:var(--m-text-3);cursor:pointer;transition:background .14s ease,color .14s ease}
 .dsh-memory-section-plus:hover{background:rgba(65,118,230,.08);color:var(--m-primary)}
-.dsh-memory-proj-list{display:flex;flex-direction:column;gap:1px}
-.dsh-memory-proj-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;height:31px;padding:0 8px 0 6px;border:none;border-radius:7px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:12.5px;line-height:19px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
+/* 二级布局：导航行占满首行，项目 / 分类各起新行；胶囊更小更轻 */
+.dsh-memory-proj-list{display:flex;flex-direction:row;flex-wrap:wrap;gap:6px;flex:1 1 100%;order:2;margin-top:6px}
+.dsh-memory-proj-row{display:flex;align-items:center;gap:6px;width:auto;flex:none;box-sizing:border-box;height:28px;font-size:12px;border:1px solid var(--m-border);border-radius:999px;padding:0 10px 0 8px;padding:0 8px 0 6px;border:none;border-radius:7px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:12.5px;line-height:19px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
 .dsh-memory-proj-row:hover{background:rgba(65,118,230,.06);color:var(--m-text)}
 .dsh-memory-proj-row-active,.dsh-memory-proj-row-active:hover{background:var(--m-primary-soft);color:var(--m-primary);font-weight:600}
-.dsh-memory-cat-list{display:flex;flex-direction:column;gap:1px}
-.dsh-memory-cat-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;height:26px;padding:0 8px 0 8px;border:none;border-radius:6px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:12.5px;line-height:19px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
+.dsh-memory-cat-list{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;flex:1 1 100%;order:2}
+.dsh-memory-cat-row{display:flex;align-items:center;gap:6px;width:auto;flex:none;box-sizing:border-box;height:28px;font-size:12px;border:1px solid var(--m-border);border-radius:999px;padding:0 8px 0 8px;border:none;border-radius:6px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:12.5px;line-height:19px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
 .dsh-memory-cat-row:hover{background:rgba(65,118,230,.06);color:var(--m-text)}
 .dsh-memory-cat-row-active,.dsh-memory-cat-row-active:hover{background:var(--m-primary-soft);color:var(--m-primary);font-weight:600}
 .dsh-memory-cat-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--dot,#5b8def)}
 .dsh-memory-cat-more{color:var(--m-text-3)}
-.dsh-memory-sidebar-foot{margin-top:auto;padding-top:10px;border-top:1px solid var(--m-side-line)}
-.dsh-memory-settings-nav{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;height:36px;padding:0 10px;border:none;border-radius:8px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
+.dsh-memory-sidebar-foot{display:flex;margin:0 0 0 auto;padding:0;border:none;order:1}
+.dsh-memory-settings-nav{display:flex;align-items:center;gap:8px;width:auto;flex:none;box-sizing:border-box;height:32px;padding:0 10px;border:none;border-radius:8px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;transition:background .15s cubic-bezier(.2,.8,.2,1),color .15s cubic-bezier(.2,.8,.2,1)}
 .dsh-memory-settings-nav:hover{background:rgba(65,118,230,.06);color:var(--m-text)}
 .dsh-memory-settings-nav-active,.dsh-memory-settings-nav-active:hover{background:var(--m-primary-soft);color:var(--m-primary);font-weight:600}
 
@@ -317,7 +319,7 @@ const SHEET = `
 /* ── 主区：中栏列表 / 右栏详情 / 全宽视图 ─────────────────────────── */
 .dsh-memory-main-col{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 .dsh-memory-cols{flex:1;min-height:0;display:flex;align-items:stretch;box-sizing:border-box}
-.dsh-memory-list-col{flex:none;width:358px;box-sizing:border-box;display:flex;flex-direction:column;min-height:0;overflow-y:auto;background:var(--dsw-alias-bg-layer-1,#fff);border-right:1px solid var(--m-border)}
+.dsh-memory-list-col{flex:none;width:420px;box-sizing:border-box;display:flex;flex-direction:column;min-height:0;overflow-y:auto;background:var(--dsw-alias-bg-layer-1,#fff);border-right:1px solid var(--m-border)}
 .dsh-memory-detail-col{flex:1;min-width:0;overflow-y:auto;background:var(--dsw-alias-bg-layer-1,#fff)}
 .dsh-memory-view-full{flex:1;min-height:0;overflow-y:auto;background:var(--dsw-alias-bg-layer-1,#fff);display:flex;flex-direction:column}
 
@@ -334,7 +336,7 @@ const SHEET = `
 @keyframes dsh-memory-section-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
 /* ── 置顶卡（大卡：图标 + 标题 + 摘要 + 时间行） ──────────────────── */
-.dsh-memory-entry-card{position:relative;box-sizing:border-box;margin:0 8px 6px;padding:8px 12px 7px;border:1px solid var(--m-card-line);border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);cursor:pointer;transition:border-color .15s cubic-bezier(.2,.8,.2,1),background .15s cubic-bezier(.2,.8,.2,1),box-shadow .15s cubic-bezier(.2,.8,.2,1),transform .15s cubic-bezier(.2,.8,.2,1);animation:dsh-memory-entry-in .22s cubic-bezier(.2,.8,.2,1) both}
+.dsh-memory-entry-card{position:relative;display:flex;flex-direction:column;min-width:0;max-width:calc(100% - 16px);box-sizing:border-box;margin:0 8px 6px;padding:8px 12px 7px;border:1px solid var(--m-card-line);border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);cursor:pointer;transition:border-color .15s cubic-bezier(.2,.8,.2,1),background .15s cubic-bezier(.2,.8,.2,1),box-shadow .15s cubic-bezier(.2,.8,.2,1),transform .15s cubic-bezier(.2,.8,.2,1);animation:dsh-memory-entry-in .22s cubic-bezier(.2,.8,.2,1) both}
 .dsh-memory-entry-card:hover{border-color:var(--m-accent-line);box-shadow:0 2px 10px rgba(65,118,230,.07)}
 .dsh-memory-entry-card-sel,.dsh-memory-entry-card-sel:hover{border-color:var(--m-accent-line);background:var(--m-card-bg-sel);box-shadow:0 2px 12px rgba(65,118,230,.10)}
 @keyframes dsh-memory-entry-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
@@ -352,7 +354,7 @@ const SHEET = `
 .dsh-memory-entry-time{white-space:nowrap}
 
 /* ── 紧凑行（时间分组内） ─────────────────────────────────────────── */
-.dsh-memory-entry-row{display:flex;align-items:center;gap:8px;width:auto;box-sizing:border-box;margin:0 8px 2px;padding:9px 10px;border:none;border-radius:9px;background:transparent;color:inherit;font-family:inherit;text-align:left;cursor:pointer;transition:background .14s cubic-bezier(.2,.8,.2,1),transform .14s cubic-bezier(.2,.8,.2,1)}
+.dsh-memory-entry-row{display:flex;align-items:center;gap:8px;width:auto;min-width:0;max-width:calc(100% - 16px);box-sizing:border-box;margin:0 8px 2px;padding:9px 10px;border:none;border-radius:9px;background:transparent;color:inherit;font-family:inherit;text-align:left;cursor:pointer;transition:background .14s cubic-bezier(.2,.8,.2,1),transform .14s cubic-bezier(.2,.8,.2,1)}
 .dsh-memory-entry-row:hover{background:var(--m-hover)}
 .dsh-memory-entry-row-sel,.dsh-memory-entry-row-sel:hover{background:var(--m-primary-soft)}
 .dsh-memory-entry-row-icon{flex:none;display:inline-flex;align-items:center;color:var(--m-text-3)}
@@ -551,8 +553,7 @@ const SHEET = `
 
 /* ── 窄屏适配 ─────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
-  .dsh-memory-sidebar{width:172px}
-  .dsh-memory-list-col{width:290px}
+  .dsh-memory-list-col{width:340px}
   .dsh-memory-related-grid{grid-template-columns:1fr}
 }
 @media (max-width: 900px) {
@@ -565,7 +566,7 @@ const SHEET = `
   .dsh-memory-sidebar-add{width:auto;padding:0 14px;margin-bottom:0;height:34px}
   .dsh-memory-nav-list,.dsh-memory-proj-list,.dsh-memory-cat-list{flex-direction:row;flex-wrap:wrap;gap:4px}
   .dsh-memory-nav-item,.dsh-memory-proj-row,.dsh-memory-cat-row{width:auto;height:32px}
-  .dsh-memory-nav-sep,.dsh-memory-section-header,.dsh-memory-sidebar-foot{display:none}
+  .dsh-memory-nav-sep,.dsh-memory-section-header{display:none}
   .dsh-memory-cols{flex-direction:column}
   .dsh-memory-list-col{width:100%;max-height:42%;border-right:none;border-bottom:1px solid var(--m-border)}
   .dsh-memory-detail-col{padding:14px 14px 18px}

@@ -1153,10 +1153,10 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
         onClick={() => { if (selecting) toggleChecked(entry.id); else selectEntry(entry) }}
       >
         <span className={css.entryTop}>
+          {selecting && renderCheck(entry)}
           <span className={css.entryIcon}>{entryIcon(entry, 17)}</span>
           <span className={css.entryTitleTxt}>{entryTitle(entry.content)}</span>
           {renderScopeChip(entry)}
-          {renderCheck(entry)}
         </span>
         <span className={css.entrySnippet}>{entrySnippet(entry.content)}</span>
         <span className={css.entryFootRow}>
@@ -1179,10 +1179,10 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
         aria-pressed={selected}
         onClick={() => { if (selecting) toggleChecked(entry.id); else selectEntry(entry) }}
       >
+        {selecting && renderCheck(entry)}
         <span className={css.entryRowIcon}>{entryIcon(entry, 16)}</span>
         <span className={css.entryTitleTxt}>{entryTitle(entry.content)}</span>
         {renderScopeChip(entry)}
-        {renderCheck(entry)}
       </button>
     )
   }
@@ -1635,13 +1635,15 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
       onCardMouseEnter={onCardMouseEnter}
       onCardMouseLeave={onCardMouseLeave}
       width={1312}
-      bottomInset={300}
       ariaLabel={t('panelTitle')}
       solid
     >
       <PshBody className={css.modalBody}>
+      <div className="psh-head">
+        <span className="psh-title">{t('panelTitle')}</span>
+      </div>
       <div className={`${css.panel} ${modalStaggerClass}`} aria-busy={state.status === 'loading'}>
-        {/* ── 左栏：品牌 / 导航 / 项目 / 分类 / 设置 ── */}
+        {/* ── 顶栏：导航 / 项目 / 分类 / 设置横排 ── */}
         <aside className={css.sidebar}>
           <div className={css.sidebarBrand}>
             <span className={css.sidebarLogo}><BoxIcon size={14} /></span>
@@ -1842,16 +1844,6 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
                   )}
                 </>
               )}
-              <button
-                type="button"
-                className={css.topClose}
-                aria-label={t('close')}
-                onClick={onClose}
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
             </div>
           </div>
 

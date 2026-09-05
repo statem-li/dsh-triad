@@ -1,8 +1,8 @@
 /**
  * 用量工作台 + 技能面板入口：侧边栏导航行。
  *
- * 「用量」「技能」「记忆」三个入口合并成一行、等分居中；点击任一按钮以
- * 按钮位置为锚点打开完整卡片（popover，视口过窄回退底部 sheet）。
+ * 「用量」「技能」「记忆」三个入口合并成一行、等分居中；点击任一按钮打开
+ * 覆盖会话主区的面板（跟点会话一样占住主区，移动端回退底部 sheet）。
  */
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -12,7 +12,7 @@ import { Workbench } from './dashboard/Workbench'
 import { SkillsPanel } from './dashboard/SkillsPanel'
 import { ensureModalAnimStyles, useModalClose } from '../modal-animation'
 import { ErrorBoundary } from '../error-boundary'
-import { NavButton, NavPortal, ensureNavMount, ensureNavStyles, navAnchorFrom, useRail } from '../sidebar-nav'
+import { NavButton, NavPortal, ensureNavMount, ensureNavStyles, navAnchorFrom, usePanelAutoClose, useRail } from '../sidebar-nav'
 import { ensureShellStyles, type PopoverAnchor } from '../popover-shell'
 
 /** 从点击事件取锚点：所在导航行右缘 +8、按钮顶缘 -6（合并行统一滑出位）。 */
@@ -34,6 +34,7 @@ function UsageWorkbenchEntry(): JSX.Element {
   const [anchor, setAnchor] = useState<PopoverAnchor | null>(null)
   const { closing, requestClose } = useModalClose(open, () => { setOpen(false) })
   const rail = useRail()
+  usePanelAutoClose('usage', open, requestClose)
 
   return (
     <>
@@ -59,7 +60,7 @@ function UsageWorkbenchEntry(): JSX.Element {
   )
 }
 
-/** 技能入口：导航行 + 贴右侧滑出的技能管理卡片。 */
+/** 技能入口：导航行 + 覆盖会话主区的面板。 */
 function SkillsEntry(): JSX.Element {
   ensureModalAnimStyles()
   ensureShellStyles()
@@ -67,6 +68,7 @@ function SkillsEntry(): JSX.Element {
   const [anchor, setAnchor] = useState<PopoverAnchor | null>(null)
   const { closing, requestClose } = useModalClose(open, () => { setOpen(false) })
   const rail = useRail()
+  usePanelAutoClose('skills', open, requestClose)
   return (
     <>
       {/* 能力（闪电，Feather zap 线性风，与自动化/记忆的自绘图标同款描边） */}

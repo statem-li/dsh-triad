@@ -15,7 +15,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 /** 动画时长（ms），CSS 与 hook 计时保持一致（与 automation 的 AUTO_ANIM_MS 同值）。 */
 export const MODAL_ANIM_MS = 240
 
-const STYLE_ID = 'dsh-modal-animation-styles'
+/** 样式标签 id（带 triad 前缀：dsh-chat-flow 注入同名旧表，先到先得会吞掉本表的 keyframes）。 */
+const STYLE_ID = 'dsh-triad-modal-animation-styles'
 
 const SHEET = `
 @keyframes dsh-modal-slide-in {
@@ -34,6 +35,14 @@ const SHEET = `
   from { opacity: 1; transform: translateX(0); }
   to { opacity: 0; transform: translateX(-10px); }
 }
+@keyframes dsh-modal-drawer-in {
+  from { opacity: 0; transform: translateX(56px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes dsh-modal-drawer-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(40px); }
+}
 @keyframes dsh-modal-rise-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -50,12 +59,15 @@ const SHEET = `
 .dsh-modal-slide-out { animation: dsh-modal-slide-out ${MODAL_ANIM_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 .dsh-modal-side-in { animation: dsh-modal-side-in ${MODAL_ANIM_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .dsh-modal-side-out { animation: dsh-modal-side-out ${MODAL_ANIM_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.dsh-modal-drawer-in { animation: dsh-modal-drawer-in ${MODAL_ANIM_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.dsh-modal-drawer-out { animation: dsh-modal-drawer-out ${MODAL_ANIM_MS}ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
 /* 内容错落：卡片播放滑入（底部上滑 / 右侧滑入均可）时生效，关闭时随卡片整体收回。
    fill-mode 必须用 backwards（延迟期应用 from 帧隐藏）而非 both——both 会在动画
    结束后残留 to 帧 transform（即使 translateY(0)），使该容器成为后代 position:fixed
    元素（图表 tooltip）的包含块，浮层整体偏移。 */
 .dsh-modal-slide-in .dsh-modal-stagger,
-.dsh-modal-side-in .dsh-modal-stagger {
+.dsh-modal-side-in .dsh-modal-stagger,
+.dsh-modal-drawer-in .dsh-modal-stagger {
   animation: dsh-modal-rise-in ${MODAL_ANIM_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   animation-delay: 60ms;
 }
@@ -63,8 +75,9 @@ const SHEET = `
 .dsh-modal-mask-out { animation: dsh-modal-mask-out ${MODAL_ANIM_MS}ms ease forwards; }
 @media (prefers-reduced-motion: reduce) {
   .dsh-modal-slide-in, .dsh-modal-slide-out, .dsh-modal-side-in, .dsh-modal-side-out,
+  .dsh-modal-drawer-in, .dsh-modal-drawer-out,
   .dsh-modal-mask-in, .dsh-modal-mask-out { animation: none; }
-  .dsh-modal-slide-in .dsh-modal-stagger, .dsh-modal-side-in .dsh-modal-stagger { animation: none; }
+  .dsh-modal-slide-in .dsh-modal-stagger, .dsh-modal-side-in .dsh-modal-stagger, .dsh-modal-drawer-in .dsh-modal-stagger { animation: none; }
 }
 `
 
@@ -83,9 +96,14 @@ export function modalAnimClass(closing: boolean): string {
   return closing ? 'dsh-modal-slide-out' : 'dsh-modal-slide-in'
 }
 
-/** 卡片动画 class——右侧滑入变体（贴入口弹出的 popover 卡片用）。 */
+/** 卡片动画 class——右侧滑入变体（贴入口弹出的 popover 卡片用，现仅兼容保留）。 */
 export function modalSideAnimClass(closing: boolean): string {
   return closing ? 'dsh-modal-side-out' : 'dsh-modal-side-in'
+}
+
+/** 卡片动画 class——会话式右侧抽屉变体（用量/技能/记忆面板用：自右向左滑入）。 */
+export function modalDrawerAnimClass(closing: boolean): string {
+  return closing ? 'dsh-modal-drawer-out' : 'dsh-modal-drawer-in'
 }
 
 /** 遮罩动画 class（自定义弹窗才有遮罩，如用量工作台）。 */

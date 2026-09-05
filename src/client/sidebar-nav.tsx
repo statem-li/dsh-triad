@@ -298,7 +298,65 @@ export function NavPortal({ name, children }: { name: NavSlotName; children: Rea
   return createPortal(children, slot)
 }
 
-/** 「导航行右缘」滑出锚点（PopoverShell 用）。
+/** 面板互斥 + 切会话自动收：三个入口共用的面板行为 hook。
+ *
+ *  - 互斥：任一面板打开时广播，其余已打开的面板自动收回（用量/能力/记忆
+ *    同时只占住一个主区，不叠罗汉）；
+ *  - 切会话自动收：面板盖住会话主区、无遮罩，侧栏保持可点；侧栏会话区内
+ *    的点击（会话行/新会话/设置等，自己导航行与面板内部除外）直接收面板，
+ *    跟「点会话回到会话」的直觉一致。
+ */
+export type TriadPanelName = 'usage' | 'skills' | 'memory'
+
+const PANEL_OPEN_EVENT = 'dsh-triad:panel-open'
+
+/** 点击是否落在侧栏列内（按几何判定，不依赖宿主的哈希类名）。
+ *
+ * 认「又高又窄、贴左」的列容器：整页级祖先（frame/root，宽占满视口）不算，
+ * 否则主区点击顺着冒泡链也会误判成侧栏。 */
+function clickInSidebar(target: Element): boolean {
+  let node: Element | null = target
+  while (node !== null && node !== document.body) {
+    const rect = node.getBoundingClientRect()
+    if (
+      rect.height >= window.innerHeight * 0.7
+      && rect.left <= 8
+      && rect.right <= window.innerWidth * 0.6
+    ) return true
+    node = node.parentElement
+  }
+  return false
+}
+
+export function usePanelAutoClose(name: TriadPanelName, open: boolean, requestClose: () => void): void {
+  // 打开时广播，挤掉别的面板。
+  useEffect(() => {
+    if (!open) return
+    window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: name }))
+  }, [open, name])
+  // 听别人的广播 + 侧栏会话区点击。
+  useEffect(() => {
+    if (!open) return undefined
+    const onSiblingOpen = (event: Event): void => {
+      if ((event as CustomEvent<TriadPanelName>).detail !== name) requestClose()
+    }
+    const onDocClick = (event: globalThis.MouseEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      // 自己导航行、面板本体（含面板内弹到 body 的二级弹窗）不收。
+      if (target.closest(`#${HOST_ID}, .psh-card`) !== null) return
+      if (clickInSidebar(target)) requestClose()
+    }
+    window.addEventListener(PANEL_OPEN_EVENT, onSiblingOpen)
+    document.addEventListener('click', onDocClick, true)
+    return () => {
+      window.removeEventListener(PANEL_OPEN_EVENT, onSiblingOpen)
+      document.removeEventListener('click', onDocClick, true)
+    }
+  }, [open, name, requestClose])
+}
+
+/** 「导航行右缘」滑出锚点（兼容保留：右侧抽屉不再跟随按钮定位）。
  *
  * 取按钮所在行容器（dsh-triad 的 nav host）的右缘 +8 作水平位；top 取按钮
  * 顶缘 -6。nav host 是统一的行容器，三个入口共用。 */

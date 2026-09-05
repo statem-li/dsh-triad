@@ -1,7 +1,7 @@
 /**
  * dsh-memory 侧边栏导航行入口（「自动化」菜单下方，sidebar-nav memory 槽位）：
  * 图标用「大脑/记忆」线性 SVG（无 emoji），rail 态只留图标；右上角 badge 显示
- * 未读变更数。面板卡片以按钮为锚点从右侧滑出（automation 同款 popover）；
+ * 未读变更数。记忆面板直接覆盖会话主区（跟点会话一样占住主区）；
  * 有未读变更时打开直达「变更」Tab。
  */
 
@@ -10,7 +10,7 @@ import { createMemoryApi, type MemoryApi } from './api.js'
 import { MemoryPanel, BrainIcon, type MemoryTab } from './Panel.tsx'
 import { useUnreadChanges } from './Notify.tsx'
 import { makeT } from './locales.js'
-import { ensureNavStyles, NavButton, NavPortal, navAnchorFrom, useRail } from '../sidebar-nav.js'
+import { ensureNavStyles, NavButton, NavPortal, navAnchorFrom, usePanelAutoClose, useRail } from '../sidebar-nav.js'
 import { ensureModalAnimStyles, useModalClose } from '../modal-animation.js'
 import { ensureShellStyles, type PopoverAnchor } from '../popover-shell.js'
 import { ensureStyles } from './styles.js'
@@ -32,6 +32,7 @@ export function MemoryNavApp(): JSX.Element | null {
   const [anchor, setAnchor] = useState<PopoverAnchor | null>(null)
   const [initialTab, setInitialTab] = useState<MemoryTab>('all')
   const { closing, requestClose } = useModalClose(open, () => { setOpen(false) })
+  usePanelAutoClose('memory', open, requestClose)
 
   const openPanel = (tab: MemoryTab): void => {
     setInitialTab(tab)

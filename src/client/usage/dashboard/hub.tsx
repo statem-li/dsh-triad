@@ -247,6 +247,14 @@ const SHEET = `
 .usm-note-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .usm-note-title { font-size: 13px; font-weight: 700; line-height: 18px; color: var(--dsw-alias-label-primary, #1f2430); }
 .usm-note-text { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary, #61666b); }
+/* ── 顶栏：分类横排 + 查询范围（取代旧左栏；主区纵向排布） ── */
+.usm-hub { flex-direction: column; }
+.usm-topbar { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.05)); background: var(--dsw-alias-bg-base, #fff); }
+.usm-cat-row { flex: 1 1 auto; min-width: 200px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.usm-cat-row .usm-cat-item { flex: none; width: auto; }
+.usm-top-range { flex: none; display: flex; align-items: center; }
+.usm-top-range .usm-range-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; }
+.usm-top-range .usm-range-custom { margin-top: 0; }
 /* ── 移动端：左栏转横向导航 ── */
 @media (max-width: 767.98px) {
   .usm-hub { flex-direction: column; }
@@ -272,6 +280,9 @@ const SHEET = `
 export const css = {
   hub: 'usm-hub',
   side: 'usm-side',
+  topbar: 'usm-topbar',
+  catRow: 'usm-cat-row',
+  topRange: 'usm-top-range',
   catTitle: 'usm-cat-title',
   catList: 'usm-cat-list',
   catItem: 'usm-cat-item',

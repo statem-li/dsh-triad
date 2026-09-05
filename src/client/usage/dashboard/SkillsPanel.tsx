@@ -278,16 +278,6 @@ function CatAllIcon({ size = 16 }: { size?: number }): JSX.Element {
   )
 }
 
-/** 添加技能：蓝圈 + 加号。 */
-function AddBadgeIcon({ size = 24 }: { size?: number }): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-      <circle cx="12" cy="12" r="8.6" fill="currentColor" />
-      <path d="M12 8.2v7.6M8.2 12h7.6" fill="none" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 /** 拖放云图标。 */
 function CloudUpIcon({ size = 18 }: { size?: number }): JSX.Element {
   return (
@@ -1933,6 +1923,8 @@ const css = {
   hub: 'skm-hub',
   hubRow: 'skm-hub-row',
   hubSide: 'skm-hub-side',
+  topbar: 'skm-topbar',
+  chipRow: 'skm-chip-row',
   hubBrand: 'skm-hub-brand',
   hubLogo: 'skm-hub-logo',
   hubBrandText: 'skm-hub-brand-text',
@@ -2206,7 +2198,12 @@ const SHEET = `
 .skm-skill-card-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
 
 /* ── Skills Hub 页面骨架：左栏（分类/筛选/添加） / 统计行 / 工具栏 / tabs / 分组 / 卡片 ── */
-.skm-hub{flex:1 1 auto;min-height:0;display:flex;min-width:0;background:var(--dsw-alias-bg-base,#fff)}
+.skm-hub{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;min-width:0;background:var(--dsw-alias-bg-base,#fff)}
+.skm-topbar{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.05));background:var(--dsw-alias-bg-base,#fff)}
+.skm-topbar[data-drop]{outline:2px dashed var(--dsw-alias-state-business-primary,#3d6be5);outline-offset:-2px}
+.skm-chip-row{flex:1 1 auto;min-width:200px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.skm-topbar .skm-cat-item{flex:none;width:auto}
+.skm-topbar .skm-new-bundle-btn{flex:none;width:auto;margin-top:0;height:32px;font-size:12px}
 /* SKILL / MCP 顶层 tab（紧贴标题文字右侧） */
 .skm-kind-tabs{flex:none;display:inline-flex;align-items:center;gap:4px;padding:2px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));border-radius:999px;background:var(--dsw-alias-bg-module-platform,#f2f4f7)}
 .skm-kind-tab{flex:none;display:inline-flex;align-items:center;justify-content:center;height:24px;box-sizing:border-box;border:none;border-radius:999px;background:transparent;padding:0 12px;font-size:12px;font-weight:600;line-height:17px;font-family:inherit;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer;transition:background 140ms ease,color 140ms ease,box-shadow 140ms ease,transform 140ms ease}
@@ -2505,7 +2502,7 @@ const SHEET = `
 .skm-guide-btn:active{transform:translateY(0) scale(.97)}
 .skm-guide-art{flex:none;display:inline-flex;align-items:flex-end;justify-content:center;margin:8px -14px 0;padding-top:6px;background:linear-gradient(180deg,rgba(61,107,229,.06),rgba(61,107,229,.14))}
 .skm-guide-modal-text{margin:0;font-size:13px;line-height:22px;color:var(--dsw-alias-label-secondary,#4a4f5a)}
-.skm-hub-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.skm-hub-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 /* ── 统计卡（参考设计稿）：左圆形渐变图标 + 图标下光点，右侧标题/大数字/描述 ── */
 .skm-stats-row{flex:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;padding:14px 16px 0}
 .skm-stat{position:relative;min-width:0;display:flex;align-items:center;gap:14px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.08));border-radius:15px;background:var(--dsw-alias-bg-base,#fff);padding:15px 18px;box-shadow:0 1px 2px rgba(16,24,40,.04);opacity:0;animation:skm-card-in 260ms cubic-bezier(.2,.7,.3,1.06) forwards;transition:box-shadow 160ms ease,transform 160ms ease,border-color 160ms ease}
@@ -2583,7 +2580,10 @@ const SHEET = `
 .skm-banner-btn{flex:none;display:inline-flex;align-items:center;height:32px;box-sizing:border-box;border:none;border-radius:10px;background:#e8850c;color:#fff;font-size:13px;font-weight:600;line-height:18px;font-family:inherit;padding:0 14px;cursor:pointer;box-shadow:0 1px 3px rgba(232,133,12,.35);transition:background 140ms ease,transform 140ms ease,box-shadow 140ms ease}
 .skm-banner-btn:hover{background:#d67906;box-shadow:0 2px 8px rgba(232,133,12,.4);transform:translateY(-1px)}
 .skm-banner-btn:active{transform:translateY(0) scale(.98)}
-.skm-main-scroll{flex:1;min-height:0;overflow-y:auto;padding:12px 16px 20px;display:flex;flex-direction:column;gap:14px}
+.skm-main-scroll{flex:1;min-height:0;overflow-y:auto;padding:12px 16px 20px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-content:start;align-items:start}
+.skm-hub-section{min-width:0}
+.skm-hub-section[data-open]{grid-column:1/-1}
+.skm-main-scroll>.skm-status{grid-column:1/-1}
 .skm-hub-section{display:flex;flex-direction:column;min-width:0}
 .skm-hub-section-head{display:flex;align-items:center;gap:8px;min-width:0;padding:2px 4px 0}
 .skm-no-result{padding:18px 4px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,#81858c)}
@@ -2706,7 +2706,7 @@ const SHEET = `
   .skm-toolbar{padding:12px 12px 4px}
   .skm-stats-row{padding:12px 12px 0}
   .skm-banner{margin:10px 12px 0}
-  .skm-main-scroll{padding:12px 12px 20px}
+  .skm-main-scroll{padding:12px 12px 20px;grid-template-columns:minmax(0,1fr)}
 }
 
 /* ── 减弱动效：卡片入场/悬停位移与开关回弹全部收敛 ───────────── */
@@ -2950,30 +2950,6 @@ function TagIcon(): JSX.Element {
   )
 }
 
-function GridIcon(): JSX.Element {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="7" />
-      <rect x="14" y="3" width="7" height="7" />
-      <rect x="14" y="14" width="7" height="7" />
-      <rect x="3" y="14" width="7" height="7" />
-    </svg>
-  )
-}
-
-function ListIcon(): JSX.Element {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="8" y1="6" x2="21" y2="6" />
-      <line x1="8" y1="12" x2="21" y2="12" />
-      <line x1="8" y1="18" x2="21" y2="18" />
-      <line x1="3" y1="6" x2="3.01" y2="6" />
-      <line x1="3" y1="12" x2="3.01" y2="12" />
-      <line x1="3" y1="18" x2="3.01" y2="18" />
-    </svg>
-  )
-}
-
 function BulbIcon(): JSX.Element {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3204,6 +3180,8 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [install, setInstall] = useState<InstallState | null>(null)
+  /** 添加技能弹窗开关（选完文件后同一弹窗内填表单）。 */
+  const [addOpen, setAddOpen] = useState(false)
   const [installName, setInstallName] = useState('')
   const [installDescription, setInstallDescription] = useState('')
   const [installBundleId, setInstallBundleId] = useState<string | undefined>(undefined)
@@ -3223,7 +3201,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [query, setQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'bundles' | 'loose'>('all')
   const [sortAsc, setSortAsc] = useState(true)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [viewMode] = useState<'grid' | 'list'>('grid')
   /** 左栏分类 / 筛选：启用状态 + Agent 预设（分类切换由左栏「Agent 预设分类」驱动）。 */
   const [statusFilter, setStatusFilter] = useState<'all' | 'on' | 'off'>('all')
   /** 自定义下拉/菜单：来源筛选 / Agent 预设 / 名称排序 / 快捷筛选 / 行内更多菜单（哪个开着，null = 都关）。 */
@@ -3406,7 +3384,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     if (renamedTimer.current !== null) window.clearTimeout(renamedTimer.current)
   }, [])
 
-  /** 指南/MCP 解释浮层的位置：贴着技能面板卡片右缘（由 data marker 定位）。 */
+  /** 指南/MCP 解释浮层的位置：贴着面板卡片右缘内侧（面板铺满主区，外侧已无空间）。 */
   const [guidePos, setGuidePos] = useState<{ left: number; top: number; height: number } | null>(null)
   useEffect(() => {
     if (!guideOpen && !mcpInfoOpen) return
@@ -3416,8 +3394,9 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     const rect = card.getBoundingClientRect()
     const vh = window.innerHeight
     const top = Math.max(8, rect.top)
+    const overlayW = mcpInfoOpen ? 330 : 300
     setGuidePos({
-      left: rect.right + 12,
+      left: Math.max(rect.left + 12, rect.right - overlayW - 12),
       top,
       height: Math.min(rect.height, vh - top - 12),
     })
@@ -3575,6 +3554,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
         const data = String(reader.result ?? '').split(',')[1] ?? ''
         setInstall({ archive: true, name: zipCandidate.path, data, folderName: zipCandidate.path })
         setInstallError(null)
+        setAddOpen(true)
       }
       reader.readAsDataURL(zipCandidate.file)
       return
@@ -3583,6 +3563,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     setInstallName(rootName)
     setInstallError(null)
     setInstall({ files: collected, folderName: rootName })
+    setAddOpen(true)
   }
 
   const onDrop = async (event: React.DragEvent<HTMLDivElement>): Promise<void> => {
@@ -3602,12 +3583,14 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     if (zipCandidate !== undefined) {
       setInstall({ archive: true, name: zipCandidate.path, data: await fileToBase64(zipCandidate.file), folderName: zipCandidate.path })
       setInstallError(null)
+      setAddOpen(true)
       return
     }
     const rootName = collected[0]?.path.split('/')[0] ?? ''
     setInstallName(rootName)
     setInstallError(null)
     setInstall({ files: collected, folderName: rootName })
+    setAddOpen(true)
   }
 
   const confirmInstall = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -3639,6 +3622,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
       setInstallName('')
       setInstallDescription('')
       setInstallBundleId(undefined)
+      setAddOpen(false)
       refresh()
     } catch (error) {
       setInstallError(error instanceof Error ? error.message : String(error))
@@ -3779,9 +3763,9 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
       solid
       closing={closing}
       onClose={() => {
-        // 安装/确认进行中禁止关闭；二级弹窗（确认/查看器/归组）打开时 Esc 归二级弹窗。
+        // 安装/确认进行中禁止关闭；二级弹窗（新建/添加/确认/查看器/归组）打开时 Esc 归二级弹窗。
         if (installing || confirming) return
-        if (confirm !== null || viewer !== null || assignTarget !== null) return
+        if (newBundleOpen || addOpen || confirm !== null || viewer !== null || assignTarget !== null) return
         onClose()
       }}
       anchor={anchor}
@@ -3815,29 +3799,20 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
             {t('kindMcp')}
           </button>
         </div>
-        <button
-          type="button"
-          className="psh-close"
-          style={{ marginLeft: 'auto' }}
-          aria-label={t('close')}
-          onClick={() => {
-            if (installing || confirming) return
-            onClose()
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
       </div>
       <PshBody className={css.modalBody}>
       <span data-skm-panel-marker aria-hidden="true" style={{ display: 'none' }} />
       <div className={css.hub} aria-busy={state.status === 'loading'}>
-        {/* ── 左侧栏（仅 SKILL 视图）：Agent 预设分类 + 快捷筛选 + 添加技能卡 ── */}
+        {/* ── 顶栏（仅 SKILL 视图）：预设 chips + 快捷筛选 + 新建/添加/指南 ── */}
         {kind === 'skill' && (
-        <aside className={css.hubSide}>
-          <div className={css.catTitle}>{t('presetCatTitle')}</div>
-          <div className={css.catList} role="group" aria-label={t('presetCatTitle')}>
+        <div
+          className={css.topbar}
+          data-drop={dropActive || undefined}
+          onDragOver={(event) => { event.preventDefault(); setDropActive(true) }}
+          onDragLeave={() => { setDropActive(false) }}
+          onDrop={(event) => { void onDrop(event) }}
+        >
+          <div className={css.chipRow} role="group" aria-label={t('presetCatTitle')}>
             <button
               type="button"
               className={`${css.catItem} ${activePreset === ALL_PRESETS ? css.catItemActive : ''}`}
@@ -3868,93 +3843,23 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
             })}
           </div>
 
-          <div className={css.filtersTitle}>{t('quickFilter')}</div>
-          <div className={css.filterBlock}>
-            {/* 启用状态：平铺三档 */}
-            <div className={css.statusSeg} role="group" aria-label={t('statusAll')}>
-              {([['all', t('statusAll')], ['on', t('statusOn')], ['off', t('statusOff')]] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`${css.statusSegBtn} ${statusFilter === value ? css.statusSegActive : ''}`}
-                  data-active={statusFilter === value || undefined}
-                  aria-pressed={statusFilter === value}
-                  onClick={() => { setStatusFilter(value) }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          {/* 启用状态：三档分段 */}
+          <div className={css.statusSeg} role="group" aria-label={t('statusAll')}>
+            {([['all', t('statusAll')], ['on', t('statusOn')], ['off', t('statusOff')]] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`${css.statusSegBtn} ${statusFilter === value ? css.statusSegActive : ''}`}
+                data-active={statusFilter === value || undefined}
+                aria-pressed={statusFilter === value}
+                onClick={() => { setStatusFilter(value) }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* 新建技能包按钮：位于添加技能卡上方 */}
-          <button
-            type="button"
-            className={`${css.newBundleBtn} ${newBundleOpen ? css.newBundleBtnOpen : ''}`}
-            aria-expanded={newBundleOpen || undefined}
-            onClick={() => { setNewBundleOpen((value) => !value) }}
-          >
-            <IconPlusOutline16 size={14} aria-hidden="true" />
-            {t('newBundle')}
-          </button>
-
-          {/* 添加技能卡 */}
-          <div
-            className={`${css.addCard} ${dropActive ? css.addCardActive : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-label={t('addSkillsTitle')}
-            onClick={() => { fileInput.current?.click() }}
-            onDragOver={(event) => { event.preventDefault(); setDropActive(true) }}
-            onDragLeave={() => { setDropActive(false) }}
-            onDrop={(event) => { void onDrop(event) }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                fileInput.current?.click()
-              }
-            }}
-          >
-            <span className={css.addCardHead}>
-              <span className={css.addCardIcon}><AddBadgeIcon size={22} /></span>
-              <span className={css.addCardTitle}>{t('addSkillsTitle')}</span>
-            </span>
-            <span className={css.addCardSub}>{t('addSkillsSub')}</span>
-            <span className={css.addDrop}>
-              <CloudUpIcon size={18} />
-              <span className={css.addDropText}>{t('dropHere')}</span>
-              <span className={css.addDropHint}>{t('dropFormat')}</span>
-            </span>
-            <button type="button" className={css.addBtn} onClick={(event) => { event.stopPropagation(); fileInput.current?.click() }}>
-              {t('browseImport')}
-            </button>
-            <input
-              ref={fileInput}
-              type="file"
-              className={css.hiddenInput}
-              multiple
-              {...{ webkitdirectory: '' }}
-              onChange={(event) => {
-                acceptFiles(event.currentTarget.files === null ? null : Array.from(event.currentTarget.files))
-              }}
-            />
-          </div>
-
-          {/* 快速上手指南卡 */}
-          <div className={css.guideCard}>
-            <span className={css.guideTitle}>{t('guideTitle')}</span>
-            <span className={css.guideDesc}>{t('guideDesc1')}</span>
-            <span className={css.guideDesc}>{t('guideDesc2')}</span>
-            <button
-              type="button"
-              className={css.guideBtn}
-              onClick={() => { setGuideOpen(true) }}
-            >
-              {t('guideStart')}
-              <ArrowRightIcon size={13} />
-            </button>
-          </div>
-        </aside>
+        </div>
         )}
 
         {/* ── 主区 ── */}
@@ -4107,75 +4012,40 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
               )}
             </div>
             <span className={css.toolbarSpacer} />
-            <div className={css.viewToggle} role="group" aria-label={t('viewGrid')}>
-              <button
-                type="button"
-                className={css.viewBtn}
-                data-active={viewMode === 'list' || undefined}
-                aria-label={t('viewList')}
-                aria-pressed={viewMode === 'list'}
-                onClick={() => { setViewMode('list') }}
-              >
-                <ListIcon />
-              </button>
-              <button
-                type="button"
-                className={css.viewBtn}
-                data-active={viewMode === 'grid' || undefined}
-                aria-label={t('viewGrid')}
-                aria-pressed={viewMode === 'grid'}
-                onClick={() => { setViewMode('grid') }}
-              >
-                <GridIcon />
-              </button>
-            </div>
+            <button
+              type="button"
+              className={`${css.newBundleBtn} ${newBundleOpen ? css.newBundleBtnOpen : ''}`}
+              style={{ width: 'auto', marginTop: 0, height: 34, fontSize: 12 }}
+              aria-expanded={newBundleOpen || undefined}
+              onClick={() => { setNewBundleOpen(true) }}
+            >
+              <IconPlusOutline16 size={14} aria-hidden="true" />
+              {t('newBundle')}
+            </button>
+            <button
+              type="button"
+              className={css.addBtn}
+              style={{ height: 34, alignSelf: 'center' }}
+              aria-label={t('addSkillsTitle')}
+              title={t('addSkillsSub')}
+              onClick={() => { setInstall(null); setInstallError(null); setAddOpen(true) }}
+            >
+              <CloudUpIcon size={15} aria-hidden="true" />
+              {t('addSkillsTitle')}
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              className={css.hiddenInput}
+              multiple
+              {...{ webkitdirectory: '' }}
+              onChange={(event) => {
+                acceptFiles(event.currentTarget.files === null ? null : Array.from(event.currentTarget.files))
+              }}
+            />
           </div>
 
           {/* 分类 tabs 已移除：与左栏「Agent 预设分类」重复（左栏控制预设切换） */}
-
-          {newBundleOpen && (
-            <form className={css.inlineForm} onSubmit={(event) => { void submitNewBundle(event) }}>
-              <input className={css.inlineInput} value={newBundleName} placeholder={t('newBundlePlaceholder')}
-                aria-label={t('newBundlePlaceholder')} autoFocus disabled={creatingBundle}
-                onChange={(event) => { setNewBundleName(event.currentTarget.value) }} />
-              <Button variant="primary" type="submit" disabled={creatingBundle || newBundleName.trim() === ''}>{t('create')}</Button>
-              <Button variant="outline" type="button" disabled={creatingBundle} onClick={() => { setNewBundleOpen(false) }}>{t('cancel')}</Button>
-            </form>
-          )}
-
-          {install !== null && (
-            <form className={css.installForm} onSubmit={(event) => { void confirmInstall(event) }}>
-              <div className={css.installRow}>
-                <input className={css.inlineInput} value={installName}
-                  placeholder={install.archive === true ? t('installNameFromArchive') : t('installNamePlaceholder')}
-                  aria-label={t('installName')}
-                  disabled={installing || install.archive === true}
-                  onChange={(event) => { setInstallName(event.currentTarget.value) }} />
-                <input className={css.inlineInput} value={installDescription} placeholder={t('installDescription')}
-                  aria-label={t('installDescription')} disabled={installing}
-                  onChange={(event) => { setInstallDescription(event.currentTarget.value) }} />
-                <label className={css.bundleSelect}>
-                  <span className={css.visuallyHidden}>{t('installBundle')}</span>
-                  <select value={installBundleId ?? ''} disabled={installing}
-                    onChange={(event) => { setInstallBundleId(event.currentTarget.value === '' ? undefined : event.currentTarget.value) }}>
-                    <option value="">{t('installLoose')}</option>
-                    {bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
-                  </select>
-                </label>
-                <span className={css.installMeta}>
-                  {install.archive === true
-                    ? t('uploadMeta', { n: 1, folder: install.folderName })
-                    : t('uploadMeta', { n: install.files.length, folder: install.folderName })}
-                </span>
-              </div>
-              {install.archive !== true && nameInvalid && <p className={css.error} role="alert">{t('installNameInvalid')}</p>}
-              <div className={css.installActions}>
-                <Button variant="primary" type="submit" disabled={installing || (install.archive !== true && (trimmedName === '' || nameInvalid))}>{t('installConfirm')}</Button>
-                <Button variant="outline" type="button" disabled={installing} onClick={() => { setInstall(null) }}>{t('installCancel')}</Button>
-              </div>
-              {installError !== null && <p className={css.error} role="alert">{installError}</p>}
-            </form>
-          )}
 
           {/* 内容区：技能包 sections + 散装技能 */}
           <div className={`${css.mainScroll} ${modalStaggerClass}`}>
@@ -4366,6 +4236,110 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
         open={mcpAddOpen}
         onClose={() => { setMcpAddOpen(false) }}
       />
+
+      {/* 新建技能包弹窗 */}
+      <Modal
+        open={newBundleOpen}
+        onClose={() => { if (!creatingBundle) setNewBundleOpen(false) }}
+        closeLabel={t('close')}
+        title={t('newBundle')}
+      >
+        <form className={css.inlineForm} onSubmit={(event) => { void submitNewBundle(event) }}>
+          <input className={css.inlineInput} value={newBundleName} placeholder={t('newBundlePlaceholder')}
+            aria-label={t('newBundlePlaceholder')} autoFocus disabled={creatingBundle}
+            onChange={(event) => { setNewBundleName(event.currentTarget.value) }} />
+          <Button variant="primary" type="submit" disabled={creatingBundle || newBundleName.trim() === ''}>{t('create')}</Button>
+          <Button variant="outline" type="button" disabled={creatingBundle} onClick={() => { setNewBundleOpen(false) }}>{t('cancel')}</Button>
+        </form>
+      </Modal>
+
+      {/* 添加技能弹窗：先拖放/浏览选文件，再填表单安装 */}
+      <Modal
+        open={addOpen}
+        onClose={() => {
+          if (installing) return
+          setAddOpen(false)
+          setInstall(null)
+          setDropActive(false)
+        }}
+        closeLabel={t('close')}
+        title={t('addSkillsTitle')}
+      >
+        {install === null ? (
+          <div
+            className={`${css.addCard} ${dropActive ? css.addCardActive : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={t('addSkillsTitle')}
+            onClick={() => { fileInput.current?.click() }}
+            onDragOver={(event) => { event.preventDefault(); setDropActive(true) }}
+            onDragLeave={() => { setDropActive(false) }}
+            onDrop={(event) => { void onDrop(event) }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                fileInput.current?.click()
+              }
+            }}
+          >
+            <span className={css.addCardHead}>
+              <span className={css.addCardIcon}><CloudUpIcon size={22} /></span>
+              <span className={css.addCardTitle}>{t('bannerTitle')}</span>
+            </span>
+            <span className={css.addCardSub}>{t('bannerSub')}</span>
+            <span className={css.addDrop}>
+              <CloudUpIcon size={18} />
+              <span className={css.addDropText}>{t('dropHere')}</span>
+              <span className={css.addDropHint}>{t('dropFormat')}</span>
+            </span>
+            <button type="button" className={css.addBtn} onClick={(event) => { event.stopPropagation(); fileInput.current?.click() }}>
+              {t('browseImport')}
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              className={css.hiddenInput}
+              multiple
+              {...{ webkitdirectory: '' }}
+              onChange={(event) => {
+                acceptFiles(event.currentTarget.files === null ? null : Array.from(event.currentTarget.files))
+              }}
+            />
+          </div>
+        ) : (
+          <form className={css.installForm} onSubmit={(event) => { void confirmInstall(event) }}>
+            <div className={css.installRow}>
+              <input className={css.inlineInput} value={installName}
+                placeholder={install.archive === true ? t('installNameFromArchive') : t('installNamePlaceholder')}
+                aria-label={t('installName')}
+                disabled={installing || install.archive === true}
+                onChange={(event) => { setInstallName(event.currentTarget.value) }} />
+              <input className={css.inlineInput} value={installDescription} placeholder={t('installDescription')}
+                aria-label={t('installDescription')} disabled={installing}
+                onChange={(event) => { setInstallDescription(event.currentTarget.value) }} />
+              <label className={css.bundleSelect}>
+                <span className={css.visuallyHidden}>{t('installBundle')}</span>
+                <select value={installBundleId ?? ''} disabled={installing}
+                  onChange={(event) => { setInstallBundleId(event.currentTarget.value === '' ? undefined : event.currentTarget.value) }}>
+                  <option value="">{t('installLoose')}</option>
+                  {bundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}
+                </select>
+              </label>
+              <span className={css.installMeta}>
+                {install.archive === true
+                  ? t('uploadMeta', { n: 1, folder: install.folderName })
+                  : t('uploadMeta', { n: install.files.length, folder: install.folderName })}
+              </span>
+            </div>
+            {install.archive !== true && nameInvalid && <p className={css.error} role="alert">{t('installNameInvalid')}</p>}
+            <div className={css.installActions}>
+              <Button variant="primary" type="submit" disabled={installing || (install.archive !== true && (trimmedName === '' || nameInvalid))}>{t('installConfirm')}</Button>
+              <Button variant="outline" type="button" disabled={installing} onClick={() => { setInstall(null); setAddOpen(false) }}>{t('installCancel')}</Button>
+            </div>
+            {installError !== null && <p className={css.error} role="alert">{installError}</p>}
+          </form>
+        )}
+      </Modal>
 
       <Modal
         open={confirm !== null}

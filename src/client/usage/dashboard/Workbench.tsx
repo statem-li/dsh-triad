@@ -29,7 +29,7 @@ const NAV: Array<{ key: TabKey; label: string; icon: (size?: number, stroke?: nu
   { key: 'accounts', label: '余额/配额', icon: walletIcon },
 ]
 
-/** 每个 tab 的理想卡片尺寸（趋势页 1240→1440：用户要求再往右扩 200px）。 */
+/** 每个 tab 的理想宽度（兼容保留：面板铺满会话主区，该值不再生效）。 */
 const TAB_SIZES: Record<TabKey, PopoverSize> = {
   trend: { width: 1440, height: 880 },
   detail: { width: 1240, height: 860 },
@@ -142,18 +142,12 @@ export function Workbench({ onClose, closing = false, anchor = null, onCardMouse
           </svg>
         </button>
         <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap', marginRight: 2 }}>{headDate}</span>
-        <button type="button" className="psh-close" aria-label="关闭" onClick={close}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
       </div>
       <PshBody>
         <div className={css.hub}>
-          {/* ── 左栏：分类 + 查询范围 ── */}
-          <aside className={css.side}>
-            <div className={css.catTitle}>工作台分类</div>
-            <div className={css.catList} role="group" aria-label="工作台分类">
+          {/* ── 顶栏：分类横排 + 查询范围 ── */}
+          <div className={css.topbar}>
+            <div className={css.catRow} role="group" aria-label="工作台分类">
               {NAV.map(item => (
                 <HubCatItem
                   key={item.key}
@@ -167,20 +161,19 @@ export function Workbench({ onClose, closing = false, anchor = null, onCardMouse
               ))}
             </div>
             {(tab === 'trend' || tab === 'detail') && (
-              <>
-                <div className={css.filtersTitle}>查询范围</div>
+              <div className={css.topRange}>
                 <RangePicker
                   preset={preset}
                   custom={custom}
                   onChangePreset={setPreset}
                   onChangeCustom={setCustom}
                 />
-              </>
+              </div>
             )}
-          </aside>
+          </div>
 
           {/* ── 主区（tab 自带统计行/工具栏/内容） ── */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {renderTab ? renderTab(tab) : tabContent[tab]}
           </div>
         </div>

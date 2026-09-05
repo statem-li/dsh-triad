@@ -1,12 +1,12 @@
 /**
- * popover-shell — 「从入口右侧滑出」的卡片外壳（用量工作台/技能面板/记忆面板共用）。
+ * popover-shell — 「覆盖会话主区」面板外壳（用量工作台/技能面板/记忆面板共用）。
  *
- * 与 automation 一级卡片（AutomationCard）同款行为：
- *  - popover 模式：贴锚点（入口按钮右缘）弹出，从左向右滑入
- *    （translateX(-14px)→0，automation auto-pop-in 同款），关闭反向收回；
- *    宽度/高度夹在视口内不越界；
- *  - 锚点缺失或视口过窄时回退底部 sheet（translateY(24px) 上滑，同 auto-sheet-in）；
- *  - 遮罩淡入淡出，点击遮罩 / Esc 关闭；Esc 走 props.onClose（面板可自行拦截）。
+ * 跟点会话一致的行为：
+ *  - drawer 模式：直接盖住会话主区（侧栏右缘 → 视口右缘，全高，无遮罩），
+ *    自右向左滑入（translateX(56px)→0），关闭反向收回；侧栏保持可点，
+ *    随时切会话（切会话自动收面板）；
+ *  - 移动端回退全屏 sheet（translateY(24px) 上滑，同 auto-sheet-in，带遮罩）；
+ *  - Esc 关闭走 props.onClose（面板可自行拦截）。
  *
  * z 层级：mask 999 / card 1000——与 ui-primitives Modal 的 root(1000) 同层，
  * 面板内部的 primitives 二级弹窗（如技能文件查看器）portal 到 body 更靠后，
@@ -15,25 +15,48 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { MODAL_ANIM_MS, modalSideAnimClass } from './modal-animation.js'
+import { MODAL_ANIM_MS, modalDrawerAnimClass } from './modal-animation.js'
 
 const STYLE_ID = 'dsh-popover-shell-styles'
 
-/** popover 回退阈值：锚点右侧可用宽度低于该值改用底部 sheet。 */
-const POPOVER_MIN_SPACE = 520
+/** 会话主区左缘回退值（px）：侧栏实测失败时盖住 280px 右侧全部区域。 */
+const FALLBACK_MAIN_LEFT = 280
+/** 窄屏阈值（px）：低于该宽度回退全屏 sheet（与移动端全屏媒体查询同值）。 */
+const NARROW_VP = 768
+
+/** 读会话主区左缘 = 侧栏列右缘（跟随侧栏折叠变化；失败回退 280）。 */
+function readMainLeft(): number {
+  try {
+    const host = document.getElementById('dsh-triad-nav-host')
+    if (host !== null) {
+      const hostRight = host.getBoundingClientRect().right
+      let node = host.parentElement
+      while (node !== null && node !== document.body) {
+        const rect = node.getBoundingClientRect()
+        if (rect.height >= window.innerHeight * 0.7 && rect.left <= 8 && rect.right >= hostRight - 4) {
+          return Math.round(rect.right)
+        }
+        node = node.parentElement
+      }
+    }
+  } catch { /* 量不到就回退固定值 */ }
+  return FALLBACK_MAIN_LEFT
+}
 
 const SHEET = `
 /* ── 遮罩：淡入淡出 ── */
 .psh-mask{position:fixed;inset:0;z-index:999;background:var(--dsw-alias-bg-mask-1,rgba(0,0,0,.45))}
 .psh-mask[data-anim='in']{animation:dsh-modal-mask-in ${MODAL_ANIM_MS}ms ease both}
 .psh-mask[data-anim='out']{animation:dsh-modal-mask-out ${MODAL_ANIM_MS}ms ease both}
-/* ── 卡片：贴锚点右侧滑出 / 底部 sheet 回退 ── */
+/* ── 卡片：会话式右侧抽屉 / 底部 sheet 回退 ── */
 .psh-card{position:fixed;z-index:1000;display:flex;flex-direction:column;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.14));border-radius:14px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#16181d));box-shadow:var(--dsw-shadow-lv3,0 8px 40px rgba(0,0,0,.5));overflow:hidden;transition:width ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1),height ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1)}
+/* 覆盖会话主区：侧栏右缘 → 视口右缘全高平铺，无圆角无阴影，像切了个视图 */
+.psh-card[data-mode='drawer']{top:0;right:0;bottom:0;height:100vh;height:100dvh;max-height:100vh;max-height:100dvh;border-radius:0;border:none;border-left:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06));box-shadow:none;transition:left ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1)}
 /* in 动画不得带 fill-mode（both/forwards 会残留 to 帧 transform，使卡片成为
    后代 position:fixed 元素（图表 tooltip）的包含块，浮层整体偏移）；out 需要
    forwards 保持隐藏态直到卸载，此时无交互、无副作用。 */
-.psh-card[data-mode='popover'][data-anim='in']{animation:dsh-modal-side-in ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1)}
-.psh-card[data-mode='popover'][data-anim='out']{animation:dsh-modal-side-out ${MODAL_ANIM_MS}ms cubic-bezier(.4,0,.2,1) both}
+.psh-card[data-mode='drawer'][data-anim='in']{animation:dsh-modal-drawer-in ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1)}
+.psh-card[data-mode='drawer'][data-anim='out']{animation:dsh-modal-drawer-out ${MODAL_ANIM_MS}ms cubic-bezier(.4,0,.2,1) both}
 .psh-card[data-mode='sheet']{left:12px !important;right:12px;bottom:12px;top:auto !important}
 /* 实底卡片（solid 模式）：玻璃质感开启时也保持不透明表面。
    两条必要条件——
@@ -58,7 +81,7 @@ html[data-dsh-glass] body[data-ds-dark-theme] .psh-card[data-solid]{
 .psh-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 /* ── 移动端：任何模式强制全屏 sheet（100vw / 100dvh，radius 0）。
     参考 tool-summary .dts__modal 的 767.98px 写法；!important 压过组件内联
-    left/top/width/height（popover 模式用内联定位，必须覆盖到 0/全屏）。
+    left/top/width/height（drawer 模式用内联宽度，必须覆盖到 0/全屏）。
     transform:none 仅作静态兜底，滑入/滑出动画的 keyframe transform 仍优先播放；
     本块注释内容未写出「星号紧跟正斜杠」两字符序列。 ── */
 @media (max-width: 767.98px){
@@ -100,11 +123,11 @@ export interface PopoverAnchor {
   top: number
 }
 
-/** 理想尺寸（px）：切换时 width/height 以 240ms 平滑过渡（automation 卡片同款）。 */
+/** 理想尺寸（px）：抽屉宽度随 tab 切换以 240ms 平滑过渡（automation 卡片同款曲线）。 */
 export interface PopoverSize {
   width: number
+  /** 兼容保留：抽屉一律全高，height/fill 不再生效。 */
   height?: number
-  /** 铺满：忽略理想值，直接占满锚点右侧到视口边缘的全部空间（仪表盘 tab 用）。 */
   fill?: boolean
 }
 
@@ -114,11 +137,11 @@ export interface PopoverShellProps {
   closing: boolean
   /** 请求关闭（遮罩点击 / Esc / 关闭钮统一走这里）。 */
   onClose: () => void
-  /** 入口锚点；null 或右侧空间不足时回退底部 sheet。 */
-  anchor: PopoverAnchor | null
-  /** 理想宽度（px），实际夹紧为 min(width, 视口右缘余量)。 */
+  /** 入口锚点（兼容保留：抽屉不再跟随按钮定位，传不传都不影响布局）。 */
+  anchor?: PopoverAnchor | null
+  /** 兼容保留：面板直接铺满会话主区，理想宽度不再生效。 */
   width?: number
-  /** 动态尺寸（优先于 width）：随内容（如 tab 切换）变化时平滑过渡。 */
+  /** 兼容保留：铺满主区，动态尺寸不再生效。 */
   size?: PopoverSize
   /** 鼠标进入卡片（hover 模式：取消自动收回）。 */
   onCardMouseEnter?: () => void
@@ -128,51 +151,40 @@ export interface PopoverShellProps {
   ariaLabel: string
   /** 实底卡片：玻璃质感开启时也不透明（内容密集的数据面板用，避免背景穿透干扰阅读）。 */
   solid?: boolean
-  /**
-   * 底部留白（px）：卡片最大高度在视口余量基础上再减去该值，
-   * 让面板底部与视口边缘保持距离（内容区自行滚动）。默认 0。
-   */
+  /** 兼容保留：抽屉一律全高，该值不再生效。 */
   bottomInset?: number
   children: ReactNode
 }
 
-/** 渲染「右侧滑出」卡片（含遮罩）。内容自带头部时无需再用 PshHead。 */
+/** 渲染「会话式右侧面板」（含遮罩）。内容自带头部时无需再用 PshHead。 */
 export function PopoverShell({
-  closing, onClose, anchor, width = 560, size, onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, bottomInset = 0, children,
+  closing, onClose, width = 560, size, onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, children,
 }: PopoverShellProps): JSX.Element {
-  // 视口尺寸走 state：窗口缩放时 fill/夹紧尺寸实时跟随（否则缩小窗口后卡片仍按旧尺寸布局）。
-  const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight })
+  // 视口宽度 + 会话主区左缘走 state：窗口缩放/侧栏折叠时实时跟随。
+  const [vw, setVw] = useState(window.innerWidth)
+  const [mainLeft, setMainLeft] = useState(readMainLeft)
   useEffect(() => {
-    const onResize = (): void => { setVp({ w: window.innerWidth, h: window.innerHeight }) }
-    window.addEventListener('resize', onResize)
-    return () => { window.removeEventListener('resize', onResize) }
-  }, [])
-  const vw = vp.w
-  const vh = vp.h
-  const idealW = size?.width ?? width
-  const asPopover = anchor !== null && (vw - anchor.left) >= Math.min(POPOVER_MIN_SPACE, idealW)
-  let style: CSSProperties | undefined
-  if (anchor !== null && asPopover) {
-    // 定位：left=按钮右缘+8；top 与按钮对齐但夹在视口内；宽高不越界。
-    // fill 模式额外把 top 提到顶部安全边（12px），让卡片吃满整个右侧面板高度。
-    const left = Math.round(anchor.left)
-    const fill = size?.fill === true
-    const top = fill ? 12 : Math.max(8, Math.min(Math.round(anchor.top), vh - 200))
-    const availH = Math.max(240, vh - top - 12 - bottomInset)
-    const availW = vw - left - 12
-    style = {
-      left,
-      top,
-      width: `${fill ? availW : Math.min(idealW, availW)}px`,
-      ...(fill
-        ? { height: `${availH}px`, maxHeight: `${availH}px` }
-        : size?.height !== undefined
-          ? { height: `${Math.min(size.height, availH)}px`, maxHeight: `${availH}px` }
-          : { maxHeight: `${availH}px` }),
+    const reread = (): void => {
+      setVw(window.innerWidth)
+      setMainLeft(readMainLeft())
     }
-  }
+    reread()
+    window.addEventListener('resize', reread)
+    const observer = new MutationObserver(reread)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-sidebar-collapsed'], subtree: true })
+    const timer = window.setInterval(reread, 1500)
+    return () => {
+      window.removeEventListener('resize', reread)
+      observer.disconnect()
+      window.clearInterval(timer)
+    }
+  }, [])
+  void (size?.width ?? width)
   const anim = closing ? 'out' : 'in'
-  const mode = asPopover ? 'popover' : 'sheet'
+  // 窄屏回退全屏 sheet；桌面端直接盖住会话主区（left=侧栏右缘，右拉满）。
+  const narrow = vw < NARROW_VP
+  const mode = narrow ? 'sheet' : 'drawer'
+  const style: CSSProperties | undefined = narrow ? undefined : { left: mainLeft }
 
   useEffect(() => {
     if (closing) return undefined
@@ -190,9 +202,11 @@ export function PopoverShell({
   // 挪到 body 后：不受侧边栏渲染影响、fixed 锚定视口、层级与 DOM 顺序可控。
   return createPortal(
     <>
-      <div className="psh-mask" data-anim={anim} aria-hidden="true" onClick={onClose} />
+      {narrow && (
+        <div className="psh-mask" data-anim={anim} aria-hidden="true" onClick={onClose} />
+      )}
       <div
-        className={`psh-card ${modalSideAnimClass(closing)}`}
+        className={`psh-card ${modalDrawerAnimClass(closing)}`}
         data-anim={anim}
         data-mode={mode}
         data-solid={solid ? '' : undefined}
