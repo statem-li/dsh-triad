@@ -73,6 +73,10 @@ dsh plugin --profile web remove dsh-triad
 - **SKILL**：`/` 触发源支持**二级分组**（`/<集合名>:` 后列出该集合下技能，含「散装技能」）、
   技能工具行、管理面板，以及**按 Agent 预设的开关覆盖**——同一个技能可以对
   `standard` 开、对 `code` 关。
+- **技能查看器**：点技能卡标题打开，默认 **1280×880 大画幅**（随视口收缩，不再是一屏
+  三分之一的小窗），工具条上可切**三档字号**（13.5 / 15 / 17px）与**全屏查看**，偏好写
+  localStorage、下次打开自动恢复；正文按 em 缩放、标题走真实层级（`#` → h1），
+  左侧文件树 252px 并高亮当前文件。
 - **MCP**：MCP Server 管理——添加/启停/会话自启动（localStorage 持久化）、
   **推荐 MCP Server 目录**（`GET /api/mcp-recommended`：官方 modelcontextprotocol/servers
   + 社区 MCP Registry 合并去重，离线兜底内置清单，5 分钟缓存）、联网搜索

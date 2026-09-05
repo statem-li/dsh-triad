@@ -52,7 +52,7 @@ const SKILL_ZH: Record<string, string> = {
   entry: '能力', panelTitle: '能力管理', close: '关闭', loading: '正在读取技能…',
   error: '暂时无法读取技能。', retry: '重试',
   uploadHint: '拖入技能文件夹安装，或点击选择', uploadMeta: '{n} 个文件 · {folder}',
-  fileCount: '{n} 文件', expandSkillFiles: '展开技能文件', previewLoading: '正在加载内容…', viewSkillFiles: '查看技能文件', viewerNav: '技能文件', assignToBundle: '归入 Bundle', assignTitle: '将「{name}」归入', assignEmpty: '还没有技能包,先点「新建 Bundle」创建一个。', deleteSkillBtn: '删除技能',
+  fileCount: '{n} 文件', expandSkillFiles: '展开技能文件', previewLoading: '正在加载内容…', viewSkillFiles: '查看技能文件', viewerNav: '技能文件', viewerFont: '字号', viewerSmall: '小字号', viewerNormal: '标准字号', viewerLarge: '大字号', viewerFull: '全屏查看', viewerExitFull: '退出全屏', viewerFilesCount: '{n} 个文件', assignToBundle: '归入 Bundle', assignTitle: '将「{name}」归入', assignEmpty: '还没有技能包,先点「新建 Bundle」创建一个。', deleteSkillBtn: '删除技能',
   installName: '技能名称', installNamePlaceholder: '例如 my-skill', installDescription: '描述（可选）',
   installNameFromArchive: '技能名取自压缩包内的 SKILL.md',
   installNameInvalid: '技能名只能包含小写字母、数字和连字符（a-z 0-9 -）',
@@ -2085,6 +2085,14 @@ const css = {
   viewerNavItem: 'skm-viewer-nav-item',
   viewerNavDir: 'skm-viewer-nav-dir',
   viewerContent: 'skm-viewer-content',
+  viewerModalFull: 'skm-viewer-modal-full',
+  viewerToolbar: 'skm-viewer-toolbar',
+  viewerPath: 'skm-viewer-path',
+  viewerToolGroup: 'skm-viewer-tool-group',
+  viewerToolBtn: 'skm-viewer-tool-btn',
+  viewerToolBtnA1: 'skm-viewer-tool-btn-a1',
+  viewerToolBtnA3: 'skm-viewer-tool-btn-a3',
+  viewerToolBtnFrame: 'skm-viewer-tool-btn-frame',
   looseEmpty: 'skm-loose-empty',
   visuallyHidden: 'skm-visually-hidden',
   // 技能/技能包开关
@@ -2641,29 +2649,53 @@ const SHEET = `
 .skm-skill-preview a{color:var(--dsw-alias-state-business-primary,#4a9eff)}
 .skm-skill-preview ul{margin:4px 0;padding-left:18px}
 .skm-skill-preview li{margin:2px 0}
-.skm-viewer-modal{width:min(960px,calc(100vw - 48px))}
-.skm-viewer-body{overflow:hidden;display:flex;flex-direction:column;height:min(640px,calc(100vh - 120px));--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
-.skm-viewer-body > div:nth-of-type(2){flex:1;min-height:0;display:flex;flex-direction:column;margin-top:8px;padding:0 16px 16px}
-.skm-viewer-layout{flex:1;min-height:0;display:flex;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:12px;overflow:hidden}
-.skm-viewer-nav{flex:none;width:200px;border-right:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));overflow-y:auto;padding:6px;box-sizing:border-box;background:var(--dsw-alias-bg-layer-1,#1c1f26)}
-.skm-viewer-nav-item{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:6px;font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary,#bbb);font-family:ui-monospace,monospace;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 查看器默认就是大画幅（1280×880 上限，随视口收缩），可一键全屏；宽/高带缓动过渡。 */
+.skm-viewer-modal{width:min(1280px,calc(100vw - 64px));animation:skm-viewer-in 260ms cubic-bezier(.2,.7,.3,1.06);transition:width 320ms cubic-bezier(.22,.72,.24,1)}
+.skm-viewer-modal-full{width:calc(100vw - 48px)}
+@keyframes skm-viewer-in{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+.skm-viewer-body{overflow:hidden;display:flex;flex-direction:column;height:min(880px,calc(100vh - 96px));transition:height 320ms cubic-bezier(.22,.72,.24,1);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
+/* 官方 Modal 的 root 自带 24px 内边距、dialog 自带 24px 下内边距：
+   全屏档按这两处留白收，免得被 flex-shrink 截断或上下溢出。 */
+.skm-viewer-modal-full .skm-viewer-body{height:calc(100vh - 76px)}
+/* 弹窗头部（官方 Modal 的 header 是本容器第一个 div）：随大画幅放大一档。 */
+.skm-viewer-body > div:first-child{padding:20px 18px 0 26px}
+.skm-viewer-body > div:first-child h2{font-size:17px;line-height:26px;font-weight:600}
+.skm-viewer-body > div:nth-of-type(2){flex:1;min-height:0;display:flex;flex-direction:column;margin-top:2px;padding:0 20px 20px}
+.skm-viewer-toolbar{flex:none;display:flex;align-items:center;gap:10px;padding:0 2px 12px}
+.skm-viewer-path{flex:1;min-width:0;display:flex;align-items:center;gap:8px;font-size:12.5px;line-height:18px;font-family:ui-monospace,monospace;color:var(--dsw-alias-label-tertiary,#888);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.skm-viewer-path b{font-weight:600;color:var(--dsw-alias-label-secondary,#61666b)}
+.skm-viewer-tool-group{flex:none;display:inline-flex;align-items:center;gap:2px;padding:2px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));border-radius:10px;background:var(--dsw-alias-bg-module-platform,#f5f6f7)}
+.skm-viewer-tool-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:26px;padding:0 7px;box-sizing:border-box;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);font-family:inherit;font-weight:600;line-height:16px;cursor:pointer;transition:background 140ms ease,color 140ms ease,box-shadow 140ms ease,transform 140ms ease}
+.skm-viewer-tool-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05));color:var(--dsw-alias-label-primary,#1f2430)}
+.skm-viewer-tool-btn:active{transform:scale(.93)}
+.skm-viewer-tool-btn[data-active='true']{background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-state-business-primary,#4176e6);box-shadow:0 1px 3px rgba(16,24,40,.12)}
+.skm-viewer-tool-btn-a1{font-size:11px}
+.skm-viewer-tool-btn-a3{font-size:15px}
+.skm-viewer-tool-btn-frame{border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.1));border-radius:10px;background:var(--dsw-alias-bg-base,#fff)}
+.skm-viewer-tool-btn-frame[data-active='true']{border-color:var(--dsw-alias-state-business-primary,#4176e6);background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4176e6) 10%,transparent);color:var(--dsw-alias-state-business-primary,#4176e6);box-shadow:none}
+.skm-viewer-layout{flex:1;min-height:0;display:flex;border:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));border-radius:14px;overflow:hidden}
+.skm-viewer-nav{flex:none;width:252px;border-right:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));overflow-y:auto;padding:8px;box-sizing:border-box;background:var(--dsw-alias-bg-module-platform,#f5f6f7)}
+.skm-viewer-nav-item{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:8px;font-size:12.5px;line-height:20px;color:var(--dsw-alias-label-secondary,#bbb);font-family:ui-monospace,monospace;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 140ms ease,color 140ms ease,box-shadow 160ms ease}
 .skm-viewer-nav-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06))}
-.skm-viewer-nav-item[data-active='true']{background:var(--dsw-alias-interactive-bg-hover,rgba(255,255,255,.06));color:var(--dsw-alias-label-primary,#eee)}
+.skm-viewer-nav-item[data-active='true']{background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#4a9eff) 14%,transparent);color:var(--dsw-alias-label-primary,#eee);box-shadow:inset 2px 0 0 var(--dsw-alias-state-business-primary,#4a9eff)}
 .skm-viewer-nav-dir{cursor:default;color:var(--dsw-alias-label-tertiary,#888)}
-.skm-viewer-content{flex:1;min-width:0;overflow:auto;padding:14px 18px;box-sizing:border-box;font-size:13px;line-height:22px;color:var(--dsw-alias-label-primary,#eee)}
-.skm-viewer-content h1,.skm-viewer-content h2,.skm-viewer-content h3,.skm-viewer-content h4{margin:12px 0 6px;line-height:26px;color:var(--dsw-alias-label-primary,#eee)}
-.skm-viewer-content h1{font-size:20px}
-.skm-viewer-content h2{font-size:17px}
-.skm-viewer-content h3{font-size:15px}
-.skm-viewer-content h4{font-size:14px}
-.skm-viewer-content p{margin:6px 0}
-.skm-viewer-content pre{background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.05));border-radius:8px;padding:10px 12px;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#bbb)}
-.skm-viewer-content code{background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.05));border-radius:4px;padding:0 4px;font-family:ui-monospace,monospace;font-size:12px}
+/* 正文全部走 em：--skm-vfs 一个变量驱动字号三档，切换时只过渡 font-size。 */
+.skm-viewer-content{flex:1;min-width:0;overflow:auto;padding:26px 34px 48px;box-sizing:border-box;font-size:var(--skm-vfs,15px);line-height:1.75;color:var(--dsw-alias-label-primary,#eee);transition:font-size 180ms ease}
+.skm-viewer-content > :first-child{margin-top:0}
+.skm-viewer-content h1,.skm-viewer-content h2,.skm-viewer-content h3,.skm-viewer-content h4,.skm-viewer-content h5{margin:1.15em 0 .5em;line-height:1.35;font-weight:600;color:var(--dsw-alias-label-primary,#eee);max-width:84ch}
+.skm-viewer-content h1{font-size:1.72em;letter-spacing:-.012em}
+.skm-viewer-content h2{font-size:1.38em}
+.skm-viewer-content h3{font-size:1.16em}
+.skm-viewer-content h4,.skm-viewer-content h5{font-size:1.04em}
+.skm-viewer-content p{margin:.62em 0;max-width:92ch}
+.skm-viewer-content pre{background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.05));border-radius:10px;padding:14px 16px;overflow:auto;font-family:ui-monospace,monospace;font-size:.86em;line-height:1.7;color:var(--dsw-alias-label-secondary,#bbb)}
+.skm-viewer-content code{background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.05));border-radius:5px;padding:1px 5px;font-family:ui-monospace,monospace;font-size:.86em}
+.skm-viewer-content pre code{background:transparent;padding:0}
 .skm-viewer-content a{color:var(--dsw-alias-state-business-primary,#4a9eff)}
-.skm-viewer-content ul,.skm-viewer-content ol{margin:6px 0;padding-left:22px}
-.skm-viewer-content li{margin:3px 0}
-.skm-viewer-content blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--dsw-alias-border-l2,rgba(255,255,255,.12));color:var(--dsw-alias-label-secondary,#bbb)}
-.skm-viewer-content hr{border:none;border-top:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));margin:10px 0}
+.skm-viewer-content ul,.skm-viewer-content ol{margin:.62em 0;padding-left:1.6em}
+.skm-viewer-content li{margin:.32em 0;max-width:92ch}
+.skm-viewer-content blockquote{margin:.9em 0;padding:.25em 1em;border-left:3px solid var(--dsw-alias-border-l2,rgba(255,255,255,.12));color:var(--dsw-alias-label-secondary,#bbb);max-width:82ch}
+.skm-viewer-content hr{border:none;border-top:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));margin:1.5em 0}
 .skm-loose-empty{margin:2px;padding:4px 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#888)}
 .skm-visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
@@ -2696,10 +2728,13 @@ const SHEET = `
 
 /* ── 移动端：侧栏收窄/隐藏、查看器上下堆叠、卡片网格单列 ───────── */
 @media (max-width: 767.98px) {
-  .skm-viewer-body{height:calc(100vh - 60px)}
+  .skm-viewer-modal,.skm-viewer-modal-full{width:calc(100vw - 48px)}
+  .skm-viewer-body,.skm-viewer-modal-full .skm-viewer-body{height:calc(100vh - 76px)}
+  .skm-viewer-body > div:nth-of-type(2){padding:0 10px 10px}
+  .skm-viewer-toolbar{flex-wrap:wrap;gap:6px;padding-bottom:8px}
   .skm-viewer-layout{flex-direction:column}
-  .skm-viewer-nav{width:100%;border-right:none;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));flex:none;max-height:40%}
-  .skm-viewer-content{flex:1;min-height:0}
+  .skm-viewer-nav{width:100%;border-right:none;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));flex:none;max-height:38%}
+  .skm-viewer-content{flex:1;min-height:0;padding:16px 14px 28px}
   .skm-hub-side{display:none}
   .skm-stats-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .skm-skill-grid{grid-template-columns:minmax(0,1fr)}
@@ -2715,6 +2750,8 @@ const SHEET = `
   .skm-stat{animation:none;opacity:1;transition:none}
   .skm-assign-card{animation:none;opacity:1;transition:none}
   .skm-drop-menu{animation:none}
+  .skm-viewer-modal{animation:none}
+  .skm-viewer-modal,.skm-viewer-body,.skm-viewer-content,.skm-viewer-nav-item,.skm-viewer-tool-btn{transition:none}
   .skm-toggle-knob{transition:none}
   .skm-toggle{transition:none}
   .skm-tag{transition:none}
@@ -2832,7 +2869,9 @@ function renderSkillMarkdown(text: string): string {
     const heading = /^(#{1,4})\s+(.*)$/.exec(trimmed)
     if (heading !== null) {
       closeList(); closeQuote()
-      const level = Math.min(heading[1].length + 2, 5)
+      // 直接用真实层级（# → h1 …… ###### → h6）：查看器字号一档一档拉得开，
+      // 旧写法把 # 压成 h3，一级标题只有 15px，整篇文档看起来像没放大。
+      const level = Math.min(heading[1].length, 6)
       html += `<h${String(level)}>` + inlineMd(heading[2]) + `</h${String(level)}>`
       continue
     }
@@ -2890,6 +2929,47 @@ function PresetBall({ id, label, active, dot, title, onSelect }: {
 }
 
 /** ---------------------------------------------------------------- 技能行 */
+
+/** ---------------------------------------------------------------- 查看器偏好 */
+
+/** 字号三档（px）：小 / 标准 / 大。默认取中间一档。 */
+const VIEWER_FONT_SIZES = [13.5, 15, 17]
+const VIEWER_PREF_KEY = 'dsh.triad.skillViewer'
+/** 三档字号的悬浮文案（与 VIEWER_FONT_SIZES 一一对应）。 */
+const VIEWER_FONT_LABELS = ['小字号', '标准字号', '大字号']
+
+interface ViewerPrefs { font: number; full: boolean }
+
+/** 读查看器偏好（字号 + 全屏）；localStorage 不可用时回落到默认值。 */
+function readViewerPrefs(): ViewerPrefs {
+  try {
+    const raw = localStorage.getItem(VIEWER_PREF_KEY)
+    if (typeof raw !== 'string' || raw === '') return { font: 1, full: false }
+    const parsed = JSON.parse(raw) as Partial<ViewerPrefs>
+    const font = typeof parsed.font === 'number' && parsed.font >= 0 && parsed.font < VIEWER_FONT_SIZES.length
+      ? Math.trunc(parsed.font)
+      : 1
+    return { font, full: parsed.full === true }
+  } catch {
+    return { font: 1, full: false }
+  }
+}
+
+/** 写查看器偏好；隐私模式等写入失败时静默降级为「只活到本次刷新」。 */
+function writeViewerPrefs(prefs: ViewerPrefs): void {
+  try { localStorage.setItem(VIEWER_PREF_KEY, JSON.stringify(prefs)) } catch { /* 忽略 */ }
+}
+
+/** 全屏 / 还原：对角箭头，状态切换时靠 CSS 过渡翻转。 */
+function ViewerExpandIcon({ full }: { full: boolean }): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {full
+        ? <path d="M6.2 2.2v4h-4M9.8 2.2v4h4M6.2 13.8v-4h-4M9.8 13.8v-4h4" />
+        : <path d="M2.2 6.2v-4h4M13.8 6.2v-4h-4M2.2 9.8v4h4M13.8 9.8v4h-4" />}
+    </svg>
+  )
+}
 
 interface ViewRow { kind: 'dir' | 'file'; path: string; depth: number; main: boolean }
 
@@ -3168,6 +3248,9 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   // 散装技能区展开。
   const [looseOpen, setLooseExpanded] = useState(false)
   const [viewer, setViewer] = useState<ViewerState | null>(null)
+  /** 查看器偏好：字号档位 + 是否全屏（localStorage 持久化，跨会话记住）。 */
+  const [viewerFont, setViewerFont] = useState<number>(() => readViewerPrefs().font)
+  const [viewerFull, setViewerFull] = useState<boolean>(() => readViewerPrefs().full)
   const [assignTarget, setAssignTarget] = useState<SkillInfo | null>(null)
   const [newBundleOpen, setNewBundleOpen] = useState(false)
   const [newBundleName, setNewBundleName] = useState('')
@@ -3516,6 +3599,20 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
     setViewer({ skill, file: 'SKILL.md', loading: true })
     void loadViewerContent(skill.name, 'SKILL.md')
   }
+
+  /** 切字号档位（夹到合法区间）。 */
+  const setViewerFontLevel = (level: number): void => {
+    setViewerFont(Math.min(Math.max(level, 0), VIEWER_FONT_SIZES.length - 1))
+  }
+
+  /** 全屏 / 还原：弹窗宽高走 CSS 过渡，不重挂内容，滚动位置保持。 */
+  const toggleViewerFull = (): void => {
+    setViewerFull((current) => !current)
+  }
+
+  // 偏好统一在这里落盘：连点两个控件时，事件回调读到的是同一帧的旧闭包值，
+  // 分开写会把其中一项存成旧值。
+  useEffect(() => { writeViewerPrefs({ font: viewerFont, full: viewerFull }) }, [viewerFont, viewerFull])
 
   const selectViewerFile = (filePath: string): void => {
     if (viewer === null) return
@@ -4362,9 +4459,41 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
           onClose={() => { setViewer(null) }}
           closeLabel={t('close')}
           title={viewer.skill.name + (viewer.file === 'SKILL.md' ? '' : ' · ' + viewer.file)}
-          className={css.viewerModal}
+          className={css.viewerModal + (viewerFull ? ' ' + css.viewerModalFull : '')}
           contentClassName={css.viewerBody}
         >
+          {/* 工具条：当前文件 + 字号三档 + 全屏切换（偏好持久化） */}
+          <div className={css.viewerToolbar}>
+            <span className={css.viewerPath}>
+              <b>{viewer.file}</b>
+              <span>{t('viewerFilesCount', { n: Array.isArray(viewer.skill.files) ? viewer.skill.files.length : 0 })}</span>
+            </span>
+            <span className={css.viewerToolGroup} role="group" aria-label={t('viewerFont')}>
+              {VIEWER_FONT_SIZES.map((size, level) => (
+                <button
+                  key={size}
+                  type="button"
+                  className={css.viewerToolBtn + (level === 0 ? ' ' + css.viewerToolBtnA1 : level === 2 ? ' ' + css.viewerToolBtnA3 : '')}
+                  data-active={viewerFont === level ? 'true' : undefined}
+                  title={VIEWER_FONT_LABELS[level]}
+                  aria-label={VIEWER_FONT_LABELS[level]}
+                  aria-pressed={viewerFont === level}
+                  onClick={() => { setViewerFontLevel(level) }}
+                >A</button>
+              ))}
+            </span>
+            <button
+              type="button"
+              className={css.viewerToolBtn + ' ' + css.viewerToolBtnFrame}
+              data-active={viewerFull ? 'true' : undefined}
+              title={viewerFull ? t('viewerExitFull') : t('viewerFull')}
+              aria-label={viewerFull ? t('viewerExitFull') : t('viewerFull')}
+              aria-pressed={viewerFull}
+              onClick={toggleViewerFull}
+            >
+              <ViewerExpandIcon full={viewerFull} />
+            </button>
+          </div>
           <div className={css.viewerLayout}>
             <nav className={css.viewerNav} aria-label={t('viewerNav')}>
               {skillFileRows(Array.isArray(viewer.skill.files) ? viewer.skill.files : []).map((row, index) => (
@@ -4382,7 +4511,7 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                 </div>
               ))}
             </nav>
-            <div className={css.viewerContent}>
+            <div className={css.viewerContent} style={{ '--skm-vfs': `${String(VIEWER_FONT_SIZES[viewerFont])}px` } as CSSProperties}>
               {viewer.loading === true
                 ? t('previewLoading')
                 : viewer.error !== undefined
