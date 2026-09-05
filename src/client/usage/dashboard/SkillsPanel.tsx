@@ -87,7 +87,7 @@ const SKILL_ZH: Record<string, string> = {
   statLooseDesc: '未分类的散装技能', statSyncDesc: '所有技能运行正常',
   statChecking: '检测中…', statIssues: '{n} 个问题', statUnknown: '检测失败', statPending: '待检测',
   searchPlaceholder: '搜索技能名称、描述或标签…', filterAll: '全部', filterBundles: '技能包', filterLoose: '散装技能', sortLabel: '名称',
-  bulk: '批量', bulkEnableAll: '全部启用', bulkDisableAll: '全部禁用', presetSelect: 'Agent 预设', viewList: '列表', viewGrid: '网格',
+  presetSelect: 'Agent 预设', viewList: '列表', viewGrid: '网格',
   bannerTitle: '添加技能', bannerSub: '拖入技能文件夹安装，或点击浏览选择',
   bannerDiscovered: '发现待导入技能', bannerFound: '发现 {n} 个文件（{folder}）待导入', bannerBtnBrowse: '浏览并导入', bannerBtnReview: '审查并导入',
   noMatch: '没有符合筛选条件的技能',
@@ -303,15 +303,6 @@ function SortDirIcon({ dir, size = 12 }: { dir: 'asc' | 'desc'; size?: number })
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" {...catStroke()}>
       {dir === 'asc' ? <path d="M12 19V5M5.8 10.8 12 4.6l6.2 6.2" /> : <path d="M12 5v14M5.8 13.2 12 19.4l6.2-6.2" />}
-    </svg>
-  )
-}
-
-/** 批量操作：复选框。 */
-function CheckboxIcon({ size = 15 }: { size?: number }): JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" {...catStroke()}>
-      <rect x="4" y="4" width="16" height="16" rx="4" />
     </svg>
   )
 }
@@ -2058,11 +2049,7 @@ const css = {
   dropBadge: 'skm-drop-badge',
   toolButton: 'skm-tool-button',
   toolbarSpacer: 'skm-toolbar-spacer',
-  bulkWrap: 'skm-bulk-wrap',
   bulkOverlay: 'skm-bulk-overlay',
-  bulkMenu: 'skm-bulk-menu',
-  bulkItem: 'skm-bulk-item',
-  bulkDot: 'skm-bulk-dot',
   presetPill: 'skm-preset-pill',
   presetSelect: 'skm-preset-select',
   presetPillChevron: 'skm-preset-pill-chevron',
@@ -2563,14 +2550,7 @@ const SHEET = `
 .skm-tool-button:active{transform:scale(.97)}
 .skm-tool-button:disabled{opacity:.5;cursor:default}
 .skm-toolbar-spacer{flex:1 1 12px}
-.skm-bulk-wrap{position:relative;flex:none}
 .skm-bulk-overlay{position:fixed;inset:0;z-index:995;border:none;background:transparent;cursor:default;padding:0}
-.skm-bulk-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:996;min-width:150px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.12));border-radius:10px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 6px 20px rgba(16,24,40,.12);padding:4px;display:flex;flex-direction:column;gap:2px;animation:skm-form-in 140ms ease-out}
-.skm-bulk-item{display:flex;align-items:center;gap:8px;border:none;border-radius:8px;padding:7px 10px;background:transparent;font-size:13px;line-height:18px;color:var(--dsw-alias-label-secondary,#61666b);cursor:pointer;font-family:inherit;text-align:left;transition:background 120ms ease,color 120ms ease}
-.skm-bulk-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04));color:var(--dsw-alias-label-primary,#0f1115)}
-.skm-bulk-item:disabled{opacity:.5;cursor:default}
-.skm-bulk-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-border-l3,rgba(0,0,0,.2))}
-.skm-bulk-dot[data-on]{background:var(--dsw-alias-state-business-primary,#4176e6)}
 .skm-preset-pill{position:relative;flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;box-sizing:border-box;border:1px solid #c9d6f5;border-radius:10px;background:#eef3fd;color:#3b62d6;padding:0 10px;font-family:inherit;font-size:13px;line-height:18px;cursor:pointer;transition:border-color 140ms ease,background 140ms ease,transform 140ms ease}
 .skm-preset-pill:active{transform:scale(.97)}
 .skm-preset-pill-label{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2734,7 +2714,7 @@ const SHEET = `
   .skm-skill-card{animation:none;opacity:1;transition:none}
   .skm-stat{animation:none;opacity:1;transition:none}
   .skm-assign-card{animation:none;opacity:1;transition:none}
-  .skm-bulk-menu{animation:none}
+  .skm-drop-menu{animation:none}
   .skm-toggle-knob{transition:none}
   .skm-toggle{transition:none}
   .skm-tag{transition:none}
@@ -3239,12 +3219,10 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   const [presets, setPresets] = useState<PresetRow[]>([])
   const [overrides, setOverrides] = useState<Record<string, Record<string, boolean>>>({})
   const [activePreset, setActivePreset] = useState<string>(ALL_PRESETS)
-  // Skills Hub 工具栏：搜索词 / 来源筛选(全部=all|bundles|loose) / 名称排序 / 批量菜单 / 视图切换
+  // Skills Hub 工具栏：搜索词 / 来源筛选(全部=all|bundles|loose) / 名称排序 / 视图切换
   const [query, setQuery] = useState('')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'bundles' | 'loose'>('all')
   const [sortAsc, setSortAsc] = useState(true)
-  const [bulkOpen, setBulkOpen] = useState(false)
-  const [bulkBusy, setBulkBusy] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   /** 左栏分类 / 筛选：启用状态 + Agent 预设（分类切换由左栏「Agent 预设分类」驱动）。 */
   const [statusFilter, setStatusFilter] = useState<'all' | 'on' | 'off'>('all')
@@ -3787,24 +3765,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
   })()
   const noResults = visibleBundleAll.length === 0 && visibleLooseAll.length === 0
 
-  /** 批量启用/禁用当前筛选下可见的技能（一次串行推进，失败提示）。 */
-  const batchSet = (enabled: boolean): void => {
-    setBulkOpen(false)
-    if (bulkBusy) return
-    const targets = visibleBundleAll.flatMap((bundle) => bundle.skills).concat(visibleLooseAll)
-    if (targets.length === 0) return
-    setBulkBusy(true)
-    const actions = targets.map((skill) => activePreset === ALL_PRESETS
-      ? skillApi.setSkillEnabled(skill.name, enabled)
-      : skillApi.setPresetSkillEnabled(activePreset, skill.name, enabled))
-    void Promise.all(actions).then(
-      () => { refreshTogglesOnly() },
-      (error) => {
-        setInstallError(skillT('toggleFailed', { message: error instanceof Error ? error.message : String(error) }))
-      },
-    ).finally(() => { setBulkBusy(false) })
-  }
-
   const trimmedName = installName.trim()
   const nameInvalid = trimmedName !== '' && !SKILL_NAME_PATTERN.test(trimmedName)
 
@@ -4141,32 +4101,6 @@ export function SkillsPanel({ onClose, closing = false, anchor = null, onCardMou
                       onClick={() => { setSortAsc(false); setOpenMenu(null) }}>
                       <span className={css.dropCheck} data-on={!sortAsc || undefined} aria-hidden="true">{!sortAsc ? '✓' : ''}</span>
                       {t('nameDesc')}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className={css.bulkWrap}>
-              <button
-                type="button"
-                className={css.toolButton}
-                aria-expanded={bulkOpen || undefined}
-                disabled={bulkBusy || noResults}
-                onClick={() => { setBulkOpen((value) => !value) }}
-              >
-                <CheckboxIcon size={15} />
-                {t('bulk')}
-                <IconChevronDownOutline14 size={11} aria-hidden="true" />
-              </button>
-              {bulkOpen && (
-                <>
-                  <button type="button" className={css.bulkOverlay} aria-label={t('close')} onClick={() => { setBulkOpen(false) }} />
-                  <div className={css.bulkMenu} role="menu">
-                    <button type="button" role="menuitem" className={css.bulkItem} disabled={bulkBusy} onClick={() => { batchSet(true) }}>
-                      <i className={css.bulkDot} data-on="true" aria-hidden="true" />{t('bulkEnableAll')}
-                    </button>
-                    <button type="button" role="menuitem" className={css.bulkItem} disabled={bulkBusy} onClick={() => { batchSet(false) }}>
-                      <i className={css.bulkDot} aria-hidden="true" />{t('bulkDisableAll')}
                     </button>
                   </div>
                 </>
